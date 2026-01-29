@@ -910,6 +910,29 @@ h4 {
         min-width: 100%;
         max-width: 100%;
         transform: none !important;
+        transform-origin: top left !important;
+        page-break-inside: avoid;
+    }
+
+    /* Assurer que les images s'impriment correctement */
+    .paper-invoice img {
+        max-width: 100% !important;
+        height: auto !important;
+        page-break-inside: avoid;
+    }
+
+    /* Éviter les coupures de page dans les sections importantes */
+    .invoice-header,
+    .invoice-to-from,
+    .invoice-items-wrap,
+    .invoice-summary-wrap {
+        page-break-inside: avoid;
+    }
+
+    /* Styles spécifiques pour mobile en impression */
+    @page {
+        size: A4;
+        margin: 0;
     }
 
     .card {

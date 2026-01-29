@@ -816,10 +816,13 @@ window.app = {
         const action = this.triggerActionAfterShow;
         if (action) {
             this.triggerActionAfterShow = null;
+            // Augmenter le délai sur mobile pour s'assurer que le layout est stable
+            const isMobile = window.innerWidth <= 768;
+            const delay = isMobile ? 1000 : 600;
             setTimeout(function () {
                 if (action === 'pdf') self.downloadPDF();
                 else if (action === 'print') self.printInvoice();
-            }, 600);
+            }, delay);
         }
     },
 
@@ -850,7 +853,43 @@ window.app = {
     },
 
     printInvoice: function () {
-        window.print();
+        // Sur mobile, désactiver temporairement le scale pour l'impression
+        const paper = document.getElementById('invoice-preview-container');
+        const scaleEl = document.getElementById('invoice-mobile-scale');
+        
+        if (paper && scaleEl) {
+            // Sauvegarder l'état actuel
+            const originalTransform = paper.style.transform;
+            const originalTransformOrigin = paper.style.transformOrigin;
+            const originalWidth = scaleEl.style.width;
+            const originalHeight = scaleEl.style.height;
+            const originalOverflow = scaleEl.style.overflow;
+            
+            // Désactiver le scale pour l'impression
+            paper.style.transform = '';
+            paper.style.transformOrigin = '';
+            scaleEl.style.width = '';
+            scaleEl.style.height = '';
+            scaleEl.style.overflow = '';
+            
+            // Attendre que le layout se stabilise
+            setTimeout(() => {
+                window.print();
+                
+                // Restaurer l'état après impression
+                setTimeout(() => {
+                    paper.style.transform = originalTransform;
+                    paper.style.transformOrigin = originalTransformOrigin;
+                    scaleEl.style.width = originalWidth;
+                    scaleEl.style.height = originalHeight;
+                    scaleEl.style.overflow = originalOverflow;
+                    // Réappliquer le scale mobile
+                    this.applyMobileInvoiceScale();
+                }, 100);
+            }, 100);
+        } else {
+            window.print();
+        }
     },
 
     downloadPDF: async function () {
@@ -864,17 +903,66 @@ window.app = {
                 return;
             }
 
-            // Wait for images to load
-            await new Promise(resolve => setTimeout(resolve, 500));
+            // Sauvegarder l'état du scale mobile
+            const paper = document.getElementById('invoice-preview-container');
+            const scaleEl = document.getElementById('invoice-mobile-scale');
+            const originalTransform = paper ? paper.style.transform : '';
+            const originalTransformOrigin = paper ? paper.style.transformOrigin : '';
+            const originalWidth = scaleEl ? scaleEl.style.width : '';
+            const originalHeight = scaleEl ? scaleEl.style.height : '';
+            const originalOverflow = scaleEl ? scaleEl.style.overflow : '';
+
+            // Désactiver temporairement le scale pour la capture
+            if (paper && scaleEl) {
+                paper.style.transform = '';
+                paper.style.transformOrigin = '';
+                scaleEl.style.width = '';
+                scaleEl.style.height = '';
+                scaleEl.style.overflow = '';
+            }
+
+            // Attendre que le layout se stabilise
+            await new Promise(resolve => setTimeout(resolve, 300));
+
+            // Attendre que les images se chargent
+            const images = container.querySelectorAll('img');
+            const imagePromises = Array.from(images).map(img => {
+                if (img.complete) return Promise.resolve();
+                return new Promise((resolve, reject) => {
+                    img.onload = resolve;
+                    img.onerror = resolve; // Continuer même si l'image échoue
+                    setTimeout(resolve, 2000); // Timeout après 2 secondes
+                });
+            });
+            await Promise.all(imagePromises);
+
+            // Détecter si on est sur mobile pour ajuster le scale
+            const isMobile = window.innerWidth <= 768;
+            const canvasScale = isMobile ? 1.5 : 2; // Réduire le scale sur mobile pour éviter les problèmes de mémoire
 
             // Use html2canvas to capture the invoice
             const canvas = await html2canvas(container, {
-                scale: 2,
+                scale: canvasScale,
                 useCORS: true,
                 backgroundColor: '#ffffff',
                 logging: false,
                 allowTaint: true,
+                width: container.scrollWidth,
+                height: container.scrollHeight,
+                windowWidth: container.scrollWidth,
+                windowHeight: container.scrollHeight,
             });
+
+            // Restaurer l'état du scale mobile
+            if (paper && scaleEl) {
+                paper.style.transform = originalTransform;
+                paper.style.transformOrigin = originalTransformOrigin;
+                scaleEl.style.width = originalWidth;
+                scaleEl.style.height = originalHeight;
+                scaleEl.style.overflow = originalOverflow;
+                // Réappliquer le scale mobile
+                this.applyMobileInvoiceScale();
+            }
 
             // Create PDF
             const { jsPDF } = window.jspdf;
@@ -882,15 +970,72 @@ window.app = {
             const pdfWidth = pdf.internal.pageSize.getWidth();
             const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
             const maxHeight = pdf.internal.pageSize.getHeight();
-            const finalHeight = pdfHeight > maxHeight ? maxHeight : pdfHeight;
+            
+            // Gérer les pages multiples si nécessaire
+            let yPosition = 0;
+            const pageHeight = pdf.internal.pageSize.getHeight();
+            
+            if (pdfHeight <= maxHeight) {
+                // Une seule page
+                pdf.addImage(canvas.toDataURL('image/png', 0.95), 'PNG', 0, 0, pdfWidth, pdfHeight);
+            } else {
+                // Pages multiples
+                const imgData = canvas.toDataURL('image/png', 0.95);
+                const imgWidth = pdfWidth;
+                const imgHeight = (canvas.height * pdfWidth) / canvas.width;
+                let heightLeft = imgHeight;
+                
+                while (heightLeft > 0) {
+                    pdf.addImage(imgData, 'PNG', 0, yPosition, imgWidth, imgHeight);
+                    heightLeft -= pageHeight;
+                    yPosition -= pageHeight;
+                    
+                    if (heightLeft > 0) {
+                        pdf.addPage();
+                    }
+                }
+            }
 
-            const imgData = canvas.toDataURL('image/png', 0.95);
-            pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, finalHeight);
-            pdf.save(`${inv.number || 'facture'}.pdf`);
+            // Méthode de téléchargement optimisée pour mobile
+            const fileName = `${inv.number || 'facture'}.pdf`;
+            
+            // Essayer d'abord la méthode standard
+            try {
+                pdf.save(fileName);
+            } catch (error) {
+                // Fallback pour mobile : utiliser blob URL
+                console.log('Méthode standard échouée, utilisation du fallback mobile');
+                const pdfBlob = pdf.output('blob');
+                const url = URL.createObjectURL(pdfBlob);
+                
+                // Créer un lien de téléchargement temporaire
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = fileName;
+                link.style.display = 'none';
+                document.body.appendChild(link);
+                
+                // Déclencher le téléchargement
+                link.click();
+                
+                // Nettoyer
+                setTimeout(() => {
+                    document.body.removeChild(link);
+                    URL.revokeObjectURL(url);
+                }, 100);
+            }
 
         } catch (error) {
             console.error('Error generating PDF:', error);
-            alert("Erreur lors de la génération du PDF. Utilisez l'impression du navigateur comme alternative.");
+            alert("Erreur lors de la génération du PDF. " + 
+                  (error.message || "Utilisez l'impression du navigateur comme alternative."));
+            
+            // Restaurer l'état en cas d'erreur
+            const paper = document.getElementById('invoice-preview-container');
+            const scaleEl = document.getElementById('invoice-mobile-scale');
+            if (paper && scaleEl) {
+                this.applyMobileInvoiceScale();
+            }
         }
     },
 
