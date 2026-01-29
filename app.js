@@ -853,6 +853,9 @@ window.app = {
     },
 
     printInvoice: function () {
+        // Ajouter une classe pour forcer les styles d'impression
+        document.body.classList.add('printing');
+        
         // Sur mobile, désactiver temporairement le scale pour l'impression
         const paper = document.getElementById('invoice-preview-container');
         const scaleEl = document.getElementById('invoice-mobile-scale');
@@ -865,30 +868,40 @@ window.app = {
             const originalHeight = scaleEl.style.height;
             const originalOverflow = scaleEl.style.overflow;
             
-            // Désactiver le scale pour l'impression
-            paper.style.transform = '';
-            paper.style.transformOrigin = '';
-            scaleEl.style.width = '';
-            scaleEl.style.height = '';
-            scaleEl.style.overflow = '';
+            // Forcer la désactivation du scale pour l'impression
+            paper.style.setProperty('transform', 'none', 'important');
+            paper.style.setProperty('transform-origin', 'top left', 'important');
+            scaleEl.style.setProperty('width', 'auto', 'important');
+            scaleEl.style.setProperty('height', 'auto', 'important');
+            scaleEl.style.setProperty('overflow', 'visible', 'important');
+            
+            // Forcer un reflow
+            void paper.offsetHeight;
             
             // Attendre que le layout se stabilise
             setTimeout(() => {
+                // Déclencher l'impression
                 window.print();
                 
-                // Restaurer l'état après impression
+                // Restaurer l'état après impression (avec un délai pour laisser le navigateur terminer)
                 setTimeout(() => {
                     paper.style.transform = originalTransform;
                     paper.style.transformOrigin = originalTransformOrigin;
                     scaleEl.style.width = originalWidth;
                     scaleEl.style.height = originalHeight;
                     scaleEl.style.overflow = originalOverflow;
+                    document.body.classList.remove('printing');
                     // Réappliquer le scale mobile
                     this.applyMobileInvoiceScale();
-                }, 100);
-            }, 100);
+                }, 500);
+            }, 200);
         } else {
-            window.print();
+            setTimeout(() => {
+                window.print();
+                setTimeout(() => {
+                    document.body.classList.remove('printing');
+                }, 500);
+            }, 200);
         }
     },
 
@@ -896,73 +909,71 @@ window.app = {
         const inv = this.data.invoices.find(i => i.id === this.currentInvoiceId);
         if (!inv) return;
 
+        // Afficher un indicateur de chargement
+        const loadingMsg = document.createElement('div');
+        loadingMsg.style.cssText = 'position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.8); color: white; padding: 1rem 2rem; border-radius: 8px; z-index: 10000; font-size: 14px;';
+        loadingMsg.textContent = 'Génération du PDF...';
+        document.body.appendChild(loadingMsg);
+
         try {
             const container = document.getElementById('invoice-preview-container');
             if (!container) {
-                alert("Erreur: conteneur de facture non trouvé");
-                return;
+                throw new Error("Conteneur de facture non trouvé");
             }
 
-            // Sauvegarder l'état du scale mobile
-            const paper = document.getElementById('invoice-preview-container');
-            const scaleEl = document.getElementById('invoice-mobile-scale');
-            const originalTransform = paper ? paper.style.transform : '';
-            const originalTransformOrigin = paper ? paper.style.transformOrigin : '';
-            const originalWidth = scaleEl ? scaleEl.style.width : '';
-            const originalHeight = scaleEl ? scaleEl.style.height : '';
-            const originalOverflow = scaleEl ? scaleEl.style.overflow : '';
-
-            // Désactiver temporairement le scale pour la capture
-            if (paper && scaleEl) {
-                paper.style.transform = '';
-                paper.style.transformOrigin = '';
-                scaleEl.style.width = '';
-                scaleEl.style.height = '';
-                scaleEl.style.overflow = '';
-            }
-
-            // Attendre que le layout se stabilise
-            await new Promise(resolve => setTimeout(resolve, 300));
-
-            // Attendre que les images se chargent
-            const images = container.querySelectorAll('img');
-            const imagePromises = Array.from(images).map(img => {
-                if (img.complete) return Promise.resolve();
-                return new Promise((resolve, reject) => {
-                    img.onload = resolve;
-                    img.onerror = resolve; // Continuer même si l'image échoue
-                    setTimeout(resolve, 2000); // Timeout après 2 secondes
+            // Créer un conteneur temporaire hors écran pour la capture
+            const tempContainer = container.cloneNode(true);
+            tempContainer.id = 'temp-invoice-container';
+            tempContainer.style.cssText = `
+                position: absolute;
+                left: -9999px;
+                top: 0;
+                width: 794px;
+                transform: none !important;
+                transform-origin: top left !important;
+                background: white;
+            `;
+            
+            // S'assurer que toutes les images sont chargées dans le clone
+            const tempImages = tempContainer.querySelectorAll('img');
+            const imagePromises = Array.from(tempImages).map(img => {
+                if (img.complete && img.naturalWidth > 0) return Promise.resolve();
+                return new Promise((resolve) => {
+                    const newImg = new Image();
+                    newImg.crossOrigin = 'anonymous';
+                    newImg.onload = () => {
+                        img.src = newImg.src;
+                        resolve();
+                    };
+                    newImg.onerror = resolve; // Continuer même si l'image échoue
+                    newImg.src = img.src || img.getAttribute('src') || '';
+                    setTimeout(resolve, 3000); // Timeout après 3 secondes
                 });
             });
+
+            document.body.appendChild(tempContainer);
             await Promise.all(imagePromises);
+            
+            // Attendre un peu pour que le layout se stabilise
+            await new Promise(resolve => setTimeout(resolve, 500));
 
             // Détecter si on est sur mobile pour ajuster le scale
             const isMobile = window.innerWidth <= 768;
-            const canvasScale = isMobile ? 1.5 : 2; // Réduire le scale sur mobile pour éviter les problèmes de mémoire
+            const canvasScale = isMobile ? 1 : 2; // Scale 1 sur mobile pour éviter les problèmes
 
             // Use html2canvas to capture the invoice
-            const canvas = await html2canvas(container, {
+            const canvas = await html2canvas(tempContainer, {
                 scale: canvasScale,
                 useCORS: true,
                 backgroundColor: '#ffffff',
                 logging: false,
-                allowTaint: true,
-                width: container.scrollWidth,
-                height: container.scrollHeight,
-                windowWidth: container.scrollWidth,
-                windowHeight: container.scrollHeight,
+                allowTaint: false,
+                width: 794,
+                height: tempContainer.scrollHeight,
             });
 
-            // Restaurer l'état du scale mobile
-            if (paper && scaleEl) {
-                paper.style.transform = originalTransform;
-                paper.style.transformOrigin = originalTransformOrigin;
-                scaleEl.style.width = originalWidth;
-                scaleEl.style.height = originalHeight;
-                scaleEl.style.overflow = originalOverflow;
-                // Réappliquer le scale mobile
-                this.applyMobileInvoiceScale();
-            }
+            // Nettoyer le conteneur temporaire
+            document.body.removeChild(tempContainer);
 
             // Create PDF
             const { jsPDF } = window.jspdf;
@@ -999,12 +1010,9 @@ window.app = {
             // Méthode de téléchargement optimisée pour mobile
             const fileName = `${inv.number || 'facture'}.pdf`;
             
-            // Essayer d'abord la méthode standard
-            try {
-                pdf.save(fileName);
-            } catch (error) {
-                // Fallback pour mobile : utiliser blob URL
-                console.log('Méthode standard échouée, utilisation du fallback mobile');
+            // Utiliser directement blob URL pour mobile (plus fiable)
+            if (isMobile) {
+                // Sur mobile, utiliser blob URL directement
                 const pdfBlob = pdf.output('blob');
                 const url = URL.createObjectURL(pdfBlob);
                 
@@ -1018,24 +1026,58 @@ window.app = {
                 // Déclencher le téléchargement
                 link.click();
                 
-                // Nettoyer
+                // Nettoyer après un délai
                 setTimeout(() => {
-                    document.body.removeChild(link);
+                    if (document.body.contains(link)) {
+                        document.body.removeChild(link);
+                    }
                     URL.revokeObjectURL(url);
-                }, 100);
+                }, 1000);
+            } else {
+                // Sur desktop, utiliser la méthode standard
+                try {
+                    pdf.save(fileName);
+                } catch (error) {
+                    // Fallback blob URL si la méthode standard échoue
+                    console.log('Méthode standard échouée, utilisation du fallback blob');
+                    const pdfBlob = pdf.output('blob');
+                    const url = URL.createObjectURL(pdfBlob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = fileName;
+                    link.style.display = 'none';
+                    document.body.appendChild(link);
+                    link.click();
+                    setTimeout(() => {
+                        if (document.body.contains(link)) {
+                            document.body.removeChild(link);
+                        }
+                        URL.revokeObjectURL(url);
+                    }, 1000);
+                }
+            }
+
+            // Retirer l'indicateur de chargement
+            if (document.body.contains(loadingMsg)) {
+                document.body.removeChild(loadingMsg);
             }
 
         } catch (error) {
             console.error('Error generating PDF:', error);
-            alert("Erreur lors de la génération du PDF. " + 
-                  (error.message || "Utilisez l'impression du navigateur comme alternative."));
             
-            // Restaurer l'état en cas d'erreur
-            const paper = document.getElementById('invoice-preview-container');
-            const scaleEl = document.getElementById('invoice-mobile-scale');
-            if (paper && scaleEl) {
-                this.applyMobileInvoiceScale();
+            // Retirer l'indicateur de chargement en cas d'erreur
+            if (document.body.contains(loadingMsg)) {
+                document.body.removeChild(loadingMsg);
             }
+            
+            // Nettoyer le conteneur temporaire s'il existe encore
+            const tempContainer = document.getElementById('temp-invoice-container');
+            if (tempContainer && document.body.contains(tempContainer)) {
+                document.body.removeChild(tempContainer);
+            }
+            
+            alert("Erreur lors de la génération du PDF: " + (error.message || "Erreur inconnue") + 
+                  "\n\nUtilisez l'impression du navigateur comme alternative.");
         }
     },
 
