@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <script>window._akg85_loadStart = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();</script>
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover">
+    <title>AKG 85 - Facturation</title>
+    <meta name="application-name" content="AKG 85 Facturation">
+    <meta name="theme-color" content="#2563eb">
+    <!-- Favicon et icônes AKG 85 -->
+    <link rel="icon" type="image/png" href="logo_akg.png" sizes="32x32">
+    <link rel="icon" type="image/png" href="logo_akg.png" sizes="192x192">
+    <link rel="apple-touch-icon" href="logo_akg.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+</head>
+
+<body>
+
+    <!-- Écran d'ouverture AKG 85 (splash) - application à part -->
+    <div id="splash" class="splash" aria-hidden="false">
+        <div class="splash-inner">
+            <img src="logo_akg.png" alt="AKG 85" class="splash-logo">
+            <p class="splash-title">AKG 85</p>
+            <p class="splash-subtitle">Facturation</p>
+        </div>
+    </div>
+
+    <!-- Header (Admin Style) -->
+    <header class="header"
+        style="background: white; border-bottom: 1px solid var(--border); padding: 1rem; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 40; height: 70px;">
+        <div style="display: flex; align-items: center; gap: 1rem;">
+            <button id="back-btn" class="btn btn-ghost btn-icon-only hidden" onclick="app.goBack()">
+                <i data-lucide="arrow-left"></i>
+            </button>
+            <div style="display: flex; align-items: center; gap: 0.75rem;">
+                <img id="header-logo" src="logo_akg.png" alt="AKG Logo"
+                    style="height: 40px; width: auto; object-fit: contain;">
+                <h1 class="header-title" id="page-title">Factures</h1>
+            </div>
+        </div>
+        <div id="header-actions">
+            <button class="btn btn-ghost btn-icon-only" onclick="app.navigate('settings')" title="Paramètres">
+                <i data-lucide="settings"></i>
+            </button>
+        </div>
+    </header>
+
+    <div class="container container-nav" style="padding-top: 1.5rem;">
+
+        <!-- DASHBOARD VIEW -->
+        <div id="view-dashboard" class="view-section">
+
+            <!-- Stats Cards Grid -->
+            <div class="stats-grid">
+                <div class="card stat-card">
+                    <div class="stat-value" id="stat-total">0</div>
+                    <div class="stat-label">Total</div>
+                </div>
+                <div class="card stat-card">
+                    <div class="stat-value" id="stat-paid" style="color: #15803d;">0</div>
+                    <div class="stat-label">Payées</div>
+                </div>
+                <div class="card stat-card">
+                    <div class="stat-value" id="stat-pending" style="color: #a16207;">0</div>
+                    <div class="stat-label">En attente</div>
+                </div>
+                <div class="card stat-card">
+                    <div class="stat-value" id="stat-cancelled" style="color: #b91c1c;">0</div>
+                    <div class="stat-label">Annulées</div>
+                </div>
+            </div>
+
+            <!-- Filters (comme console admin) -->
+            <div class="card" style="padding: 1rem; margin-bottom: 1.5rem;">
+                <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
+                    <div style="position: relative; flex: 1; min-width: 140px;">
+                        <i data-lucide="search"
+                            style="position: absolute; left: 0.75rem; top: 0.75rem; width: 1rem; height: 1rem; color: #64748b;"></i>
+                        <input type="text" id="search-input" class="form-input" style="padding-left: 2.5rem;"
+                            placeholder="Rechercher par n° ou client...">
+                    </div>
+                    <select id="status-filter" class="form-select" style="width: auto; min-width: 160px;"
+                        onchange="app.applyFilters()">
+                        <option value="all">Tous les statuts</option>
+                        <option value="PENDING">En attente</option>
+                        <option value="PAID">Payée</option>
+                        <option value="PARTIAL">Partielle</option>
+                        <option value="CANCELLED">Annulée</option>
+                        <option value="REFUNDED">Remboursée</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Invoice List (Cards for Mobile) -->
+            <div id="invoice-list">
+                <!-- Invoices injected here -->
+            </div>
+
+            <button class="fab" onclick="app.navigate('create')">
+                <i data-lucide="plus"></i>
+            </button>
+        </div>
+
+        <!-- SETTINGS VIEW -->
+        <div id="view-settings" class="view-section hidden">
+            <h2 class="text-2xl font-bold mb-4">Paramètres</h2>
+            <form id="settings-form" onsubmit="app.saveSettings(event)">
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">Informations Magasin</h3>
+                    </div>
+                    <div class="card-content" style="display: flex; flex-direction: column; gap: 1rem;">
+                        <div>
+                            <label class="label">Nom de l'entreprise</label>
+                            <input type="text" name="storeName" class="form-input" required>
+                        </div>
+                        <div>
+                            <label class="label">Adresse (Ligne 1)</label>
+                            <input type="text" name="storeAddress1" class="form-input">
+                        </div>
+                        <div>
+                            <label class="label">Adresse (Ligne 2)</label>
+                            <input type="text" name="storeAddress2" class="form-input">
+                        </div>
+                        <div>
+                            <label class="label">Téléphone(s)</label>
+                            <input type="text" name="storePhone" class="form-input">
+                        </div>
+                        <div>
+                            <label class="label">Email</label>
+                            <input type="email" name="storeEmail" class="form-input" placeholder="contact@exemple.com">
+                        </div>
+                        <div>
+                            <label class="label">Logo URL (ou chemin local)</label>
+                            <input type="text" name="storeLogo" class="form-input" placeholder="ex: logo_akg.png">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">Configuration Facture</h3>
+                    </div>
+                    <div class="card-content" style="display: flex; flex-direction: column; gap: 1rem;">
+                        <div>
+                            <label class="label">Devise</label>
+                            <input type="text" name="currency" class="form-input" value="FCFA">
+                        </div>
+                        <div>
+                            <label class="label">Taux TVA (%)</label>
+                            <input type="number" name="taxRate" class="form-input" value="18">
+                        </div>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-primary" style="width: 100%;">Enregistrer</button>
+            </form>
+        </div>
+
+        <!-- CREATE/EDIT VIEW -->
+        <div id="view-create" class="view-section hidden">
+            <h2 id="form-title" class="text-2xl font-bold mb-4">Nouvelle Facture</h2>
+            <form id="create-form" onsubmit="app.saveInvoice(event)">
+                <input type="hidden" name="id" id="invoice-id">
+
+                <!-- Client Card -->
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title" style="display: flex; align-items: center; gap: 0.5rem;">
+                            <i data-lucide="user" style="width: 1.25rem;"></i> Client
+                        </h3>
+                    </div>
+                    <div class="card-content" style="display: flex; flex-direction: column; gap: 1rem;">
+                        <div>
+                            <label class="label">Nom du client *</label>
+                            <input type="text" name="clientName" class="form-input" required>
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                            <div>
+                                <label class="label">Téléphone</label>
+                                <input type="text" name="clientPhone" class="form-input" placeholder="+221...">
+                            </div>
+                            <div>
+                                <label class="label">Email</label>
+                                <input type="email" name="clientEmail" class="form-input">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="label">Adresse</label>
+                            <input type="text" name="clientAddress" class="form-input">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Details Card -->
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title" style="display: flex; align-items: center; gap: 0.5rem;">
+                            <i data-lucide="file-text" style="width: 1.25rem;"></i> Détails
+                        </h3>
+                    </div>
+                    <div class="card-content" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                        <div>
+                            <label class="label">Date</label>
+                            <input type="date" name="date" class="form-input" required>
+                        </div>
+                        <div>
+                            <label class="label">Échéance</label>
+                            <input type="date" name="dueDate" class="form-input">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Items Card -->
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">Articles</h3>
+                    </div>
+                    <div class="card-content">
+                        <div id="items-container" style="display: flex; flex-direction: column; gap: 1rem;">
+                            <!-- Items injected here -->
+                        </div>
+                        <button type="button" class="btn btn-outline" style="width: 100%; margin-top: 1rem;"
+                            onclick="app.addItemRow()">
+                            <i data-lucide="plus" style="margin-right: 0.5rem; width: 1rem;"></i> Ajouter un article
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Calculations & Notes Card -->
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">Calculs & Notes</h3>
+                    </div>
+                    <div class="card-content">
+                        <!-- Discount Section -->
+                        <div style="margin-bottom: 1rem;">
+                            <label class="label">Remise</label>
+                            <div style="display: flex; gap: 0.5rem;">
+                                <select name="discountType" class="form-select" style="width: 120px;"
+                                    onchange="app.calculateTotal()">
+                                    <option value="FIXED">Montant</option>
+                                    <option value="PERCENT">%</option>
+                                </select>
+                                <input type="number" name="discountValue" class="form-input" placeholder="0" min="0"
+                                    oninput="app.calculateTotal()">
+                            </div>
+                        </div>
+
+                        <!-- Tax Toggle -->
+                        <div
+                            style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; border-bottom: 1px dashed var(--border); padding-bottom: 1rem;">
+                            <label class="label" style="margin: 0;">Activer TVA (18%)</label>
+                            <input type="checkbox" id="tax-toggle" onchange="app.calculateTotal()"
+                                style="width: 1.25rem; height: 1.25rem;">
+                        </div>
+
+                        <!-- Notes -->
+                        <div style="margin-bottom: 1rem;">
+                            <label class="label">Notes / Conditions</label>
+                            <textarea name="notes" class="form-textarea" rows="3"
+                                placeholder="Paiement à réception..."></textarea>
+                        </div>
+
+                        <div style="border-top: 1px solid var(--border); padding-top: 1rem;">
+                            <div class="invoice-row-flex">
+                                <span>Sous-total</span>
+                                <span id="create-subtotal" class="font-semibold">0 FCFA</span>
+                            </div>
+                            <div class="invoice-row-flex text-green-600 hidden" id="discount-row">
+                                <span>Remise</span>
+                                <span id="create-discount">-0 FCFA</span>
+                            </div>
+                            <div class="invoice-row-flex text-muted-foreground hidden" id="tax-row">
+                                <span>TVA (18%)</span>
+                                <span id="create-tax">0 FCFA</span>
+                            </div>
+                            <div class="invoice-row-flex font-bold text-lg"
+                                style="margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid var(--border);">
+                                <span>Total TTC</span>
+                                <span id="create-total">0 FCFA</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-primary" style="width: 100%; height: 3rem; font-size: 1rem;">
+                    <i data-lucide="save" style="margin-right: 0.5rem; width: 1.25rem;"></i> Créer la facture
+                </button>
+            </form>
+        </div>
+
+        <!-- DETAIL VIEW (Paper Invoice) -->
+        <div id="view-detail" class="view-section hidden">
+
+            <div style="margin-bottom: 1.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap;" class="no-print">
+                <select id="status-select" class="form-select" style="width: auto; flex: 1; min-width: 140px;"
+                    onchange="app.updateStatus(this.value)">
+                    <option value="PENDING">En attente</option>
+                    <option value="PAID">Payée</option>
+                    <option value="PARTIAL">Partielle</option>
+                    <option value="CANCELLED">Annulée</option>
+                    <option value="REFUNDED">Remboursée</option>
+                </select>
+                <button class="btn btn-primary" onclick="app.downloadPDF()">
+                    <i data-lucide="download" style="width: 1rem; margin-right: 0.5rem;"></i> PDF
+                </button>
+                <button class="btn btn-outline" onclick="app.printInvoice()">
+                    <i data-lucide="printer" style="width: 1rem; margin-right: 0.5rem;"></i> Imprimer
+                </button>
+                <button class="btn btn-outline" onclick="app.editInvoice(app.currentInvoiceId)">
+                    <i data-lucide="edit" style="width: 1rem; margin-right: 0.5rem;"></i> Modifier
+                </button>
+                <button class="btn btn-danger btn-icon-only"
+                    onclick="app.currentInvoiceId && app.deleteInvoice(app.currentInvoiceId)">
+                    <i data-lucide="trash-2" style="width: 1rem;"></i>
+                </button>
+            </div>
+
+            <!-- Wrapper scroll : sur mobile, scale pour même rendu que référence (fit largeur) -->
+            <div class="invoice-preview-scroll" id="invoice-preview-scroll">
+                <div class="invoice-mobile-scale" id="invoice-mobile-scale">
+                    <div id="invoice-preview-container" class="paper-invoice">
+                        <!-- Injected via JS -->
+                    </div>
+                </div>
+            </div>
+
+            <div class="text-center text-muted-foreground text-sm no-print" style="margin-top: 2rem;">
+                Aperçu fidèle à la version PDF/Imprimée
+            </div>
+        </div>
+
+    </div>
+
+    <!-- ITEM TEMPLATE -->
+    <template id="item-template">
+        <div class="product-row"
+            style="display: grid; grid-template-columns: 1fr auto auto auto; gap: 0.5rem; align-items: start; border-bottom: 1px dashed var(--border); padding-bottom: 1rem;">
+            <div style="grid-column: 1 / -1; display: grid; gap: 0.5rem;">
+                <input type="text" class="form-input item-desc" placeholder="Désignation" required>
+            </div>
+            <div style="grid-column: 1 / 2;">
+                <!-- Spacer or specific mobile layout adjustment -->
+            </div>
+            <div style="width: 4rem;">
+                <input type="number" class="form-input item-qty" placeholder="Qté" value="1" min="1"
+                    oninput="app.calculateTotal()">
+            </div>
+            <div style="width: 6rem;">
+                <input type="number" class="form-input item-price" placeholder="Prix" min="0"
+                    oninput="app.calculateTotal()">
+            </div>
+            <button type="button" class="btn btn-ghost btn-icon-only text-red-500"
+                onclick="this.parentElement.remove(); app.calculateTotal()">
+                <i data-lucide="trash-2" style="width: 1rem;"></i>
+            </button>
+        </div>
+    </template>
+
+    <script src="app.js"></script>
+</body>
+
+</html>
