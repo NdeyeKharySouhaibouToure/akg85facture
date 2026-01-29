@@ -1,0 +1,21 @@
+# Fichiers de configuration locale avec clés API
+.env
+supabase-config.local.js
+
+# Node modules
+node_modules/
+package-lock.json
+
+# Fichiers système
+.DS_Store
+Thumbs.db
+
+# Éditeurs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log

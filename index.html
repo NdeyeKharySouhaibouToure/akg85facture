@@ -20,6 +20,12 @@
     <script src="https://unpkg.com/lucide@latest"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+    <!-- Supabase SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- Configuration locale (si elle existe, elle override la config par défaut) -->
+    <script src="supabase-config.local.js" onerror="console.log('Fichier de config local non trouvé, utilisation de la config par défaut')"></script>
+    <!-- Configuration par défaut -->
+    <script src="supabase-config.js"></script>
 </head>
 
 <body>

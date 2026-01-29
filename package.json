@@ -1,0 +1,12 @@
+{
+  "name": "akg85-invoice",
+  "version": "1.0.0",
+  "description": "Application de facturation AKG 85",
+  "scripts": {
+    "setup": "node scripts/setup-config.js",
+    "dev": "node scripts/setup-config.js && npx http-server -p 8080 -o"
+  },
+  "devDependencies": {
+    "dotenv": "^16.3.1"
+  }
+}

@@ -1,0 +1,8 @@
+// Configuration Supabase locale
+// Copiez ce fichier vers supabase-config.local.js et remplissez vos vraies clés API
+// Ce fichier est ignoré par Git (.gitignore) pour protéger vos clés
+
+window.supabaseConfig = {
+    url: 'YOUR_SUPABASE_URL', // Ex: https://xxxxx.supabase.co
+    anonKey: 'YOUR_SUPABASE_ANON_KEY' // Votre clé publique anonyme
+};

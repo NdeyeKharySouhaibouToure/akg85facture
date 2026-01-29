@@ -16,28 +16,77 @@ window.app = {
     currentInvoiceId: null,
     triggerActionAfterShow: null, // 'pdf' | 'print' pour déclencher après affichage détail
     statusFilter: 'all',
+    supabaseClient: null,
+    useSupabase: false, // Flag pour savoir si Supabase est configuré
 
-    init: function () {
+    // Obtenir le client Supabase
+    getSupabaseClient: function() {
+        if (!this.supabaseClient && typeof supabase !== 'undefined' && window.supabaseConfig) {
+            if (window.supabaseConfig.url && window.supabaseConfig.url !== 'YOUR_SUPABASE_URL' &&
+                window.supabaseConfig.anonKey && window.supabaseConfig.anonKey !== 'YOUR_SUPABASE_ANON_KEY') {
+                this.supabaseClient = supabase.createClient(
+                    window.supabaseConfig.url,
+                    window.supabaseConfig.anonKey
+                );
+                this.useSupabase = true;
+            }
+        }
+        return this.supabaseClient;
+    },
+
+    // Migrer les données depuis localStorage vers Supabase
+    migrateFromLocalStorage: async function() {
+        if (!this.useSupabase) return;
+
+        try {
+            // Migrer les factures
+            const storedInvoices = localStorage.getItem('akg85_invoices');
+            if (storedInvoices) {
+                const invoices = JSON.parse(storedInvoices);
+                for (const invoice of invoices) {
+                    await this.saveInvoiceToSupabase(invoice);
+                }
+                localStorage.removeItem('akg85_invoices');
+                console.log('Factures migrées depuis localStorage');
+            }
+
+            // Migrer les paramètres
+            const storedSettings = localStorage.getItem('akg85_settings');
+            if (storedSettings) {
+                const settings = JSON.parse(storedSettings);
+                await this.saveSettingsToSupabase(settings);
+                localStorage.removeItem('akg85_settings');
+                console.log('Paramètres migrés depuis localStorage');
+            }
+        } catch (error) {
+            console.error('Erreur lors de la migration:', error);
+        }
+    },
+
+    init: async function () {
         if (typeof lucide !== 'undefined') lucide.createIcons();
-        this.loadSettings();
+        
+        // Initialiser Supabase
+        this.getSupabaseClient();
+        
+        // Charger les paramètres
+        await this.loadSettings();
 
-        // Load data
-        const stored = localStorage.getItem('akg85_invoices');
-        if (stored) {
-            this.data.invoices = JSON.parse(stored);
+        // Charger les données
+        if (this.useSupabase) {
+            try {
+                await this.loadInvoicesFromSupabase();
+                // Migrer depuis localStorage si des données existent
+                await this.migrateFromLocalStorage();
+            } catch (error) {
+                console.error('Erreur lors du chargement depuis Supabase:', error);
+                // Fallback sur localStorage en cas d'erreur
+                this.useSupabase = false;
+                this.loadInvoicesFromLocalStorage();
+            }
         } else {
-            // Seed
-            this.data.invoices = [{
-                id: 'FAC-001', number: 'FAC-001',
-                clientName: 'Client Exemple', clientPhone: '+221 77 000 00 00',
-                date: '2026-01-29', dueDate: '2026-02-28',
-                items: [{ designation: 'Produit Test', quantity: 1, unitPrice: 10000, total: 10000 }],
-                subtotal: 10000, taxRate: 18, taxAmount: 1800,
-                discountType: 'FIXED', discountValue: 0, discountAmount: 0,
-                total: 11800, status: 'PAID', paidAmount: 11800,
-                createdAt: new Date().toISOString()
-            }];
-            this.saveData();
+            // Utiliser localStorage si Supabase n'est pas configuré
+            this.loadInvoicesFromLocalStorage();
         }
 
         const searchInput = document.getElementById('search-input');
@@ -83,8 +132,154 @@ window.app = {
         this.renderList(search);
     },
 
-    saveData: function () {
-        localStorage.setItem('akg85_invoices', JSON.stringify(this.data.invoices));
+    // Charger les factures depuis localStorage (fallback)
+    loadInvoicesFromLocalStorage: function() {
+        const stored = localStorage.getItem('akg85_invoices');
+        if (stored) {
+            this.data.invoices = JSON.parse(stored);
+        } else {
+            // Seed
+            this.data.invoices = [{
+                id: 'FAC-001', number: 'FAC-001',
+                clientName: 'Client Exemple', clientPhone: '+221 77 000 00 00',
+                date: '2026-01-29', dueDate: '2026-02-28',
+                items: [{ designation: 'Produit Test', quantity: 1, unitPrice: 10000, total: 10000 }],
+                subtotal: 10000, taxRate: 18, taxAmount: 1800,
+                discountType: 'FIXED', discountValue: 0, discountAmount: 0,
+                total: 11800, status: 'PAID', paidAmount: 11800,
+                createdAt: new Date().toISOString()
+            }];
+            this.saveData();
+        }
+    },
+
+    // Charger les factures depuis Supabase
+    loadInvoicesFromSupabase: async function() {
+        if (!this.useSupabase) return;
+
+        try {
+            const { data, error } = await this.supabaseClient
+                .from('invoices')
+                .select('*')
+                .order('date', { ascending: false });
+
+            if (error) throw error;
+
+            if (data && data.length > 0) {
+                // Convertir les données Supabase au format de l'app
+                this.data.invoices = data.map(inv => ({
+                    id: inv.id,
+                    number: inv.number,
+                    clientName: inv.client_name,
+                    clientPhone: inv.client_phone,
+                    clientEmail: inv.client_email,
+                    clientAddress: inv.client_address,
+                    date: inv.date,
+                    dueDate: inv.due_date,
+                    items: inv.items,
+                    subtotal: parseFloat(inv.subtotal),
+                    discountType: inv.discount_type,
+                    discountValue: parseFloat(inv.discount_value),
+                    discountAmount: parseFloat(inv.discount_amount),
+                    taxRate: parseFloat(inv.tax_rate),
+                    taxAmount: parseFloat(inv.tax_amount),
+                    total: parseFloat(inv.total),
+                    notes: inv.notes,
+                    status: inv.status,
+                    paidAmount: parseFloat(inv.paid_amount),
+                    createdAt: inv.created_at,
+                    updatedAt: inv.updated_at
+                }));
+            } else {
+                // Aucune facture, créer une facture exemple
+                this.data.invoices = [{
+                    id: 'FAC-001', number: 'FAC-001',
+                    clientName: 'Client Exemple', clientPhone: '+221 77 000 00 00',
+                    date: '2026-01-29', dueDate: '2026-02-28',
+                    items: [{ designation: 'Produit Test', quantity: 1, unitPrice: 10000, total: 10000 }],
+                    subtotal: 10000, taxRate: 18, taxAmount: 1800,
+                    discountType: 'FIXED', discountValue: 0, discountAmount: 0,
+                    total: 11800, status: 'PAID', paidAmount: 11800,
+                    createdAt: new Date().toISOString()
+                }];
+                await this.saveData();
+            }
+        } catch (error) {
+            console.error('Erreur lors du chargement des factures:', error);
+            throw error;
+        }
+    },
+
+    // Sauvegarder une facture dans Supabase
+    saveInvoiceToSupabase: async function(invoice) {
+        if (!this.useSupabase) return;
+
+        try {
+            const invoiceData = {
+                id: invoice.id,
+                number: invoice.number,
+                client_name: invoice.clientName,
+                client_phone: invoice.clientPhone || null,
+                client_email: invoice.clientEmail || null,
+                client_address: invoice.clientAddress || null,
+                date: invoice.date,
+                due_date: invoice.dueDate || null,
+                items: invoice.items,
+                subtotal: invoice.subtotal,
+                discount_type: invoice.discountType || 'FIXED',
+                discount_value: invoice.discountValue || 0,
+                discount_amount: invoice.discountAmount || 0,
+                tax_rate: invoice.taxRate || 0,
+                tax_amount: invoice.taxAmount || 0,
+                total: invoice.total,
+                notes: invoice.notes || null,
+                status: invoice.status || 'PENDING',
+                paid_amount: invoice.paidAmount || 0
+            };
+
+            const { error } = await this.supabaseClient
+                .from('invoices')
+                .upsert(invoiceData, { onConflict: 'id' });
+
+            if (error) throw error;
+        } catch (error) {
+            console.error('Erreur lors de la sauvegarde de la facture:', error);
+            throw error;
+        }
+    },
+
+    // Supprimer une facture de Supabase
+    deleteInvoiceFromSupabase: async function(id) {
+        if (!this.useSupabase) return;
+
+        try {
+            const { error } = await this.supabaseClient
+                .from('invoices')
+                .delete()
+                .eq('id', id);
+
+            if (error) throw error;
+        } catch (error) {
+            console.error('Erreur lors de la suppression de la facture:', error);
+            throw error;
+        }
+    },
+
+    saveData: async function () {
+        if (this.useSupabase) {
+            try {
+                // Sauvegarder toutes les factures dans Supabase
+                for (const invoice of this.data.invoices) {
+                    await this.saveInvoiceToSupabase(invoice);
+                }
+            } catch (error) {
+                console.error('Erreur lors de la sauvegarde dans Supabase:', error);
+                // Fallback sur localStorage en cas d'erreur
+                localStorage.setItem('akg85_invoices', JSON.stringify(this.data.invoices));
+            }
+        } else {
+            localStorage.setItem('akg85_invoices', JSON.stringify(this.data.invoices));
+        }
         this.updateStats();
     },
 
@@ -393,7 +588,7 @@ window.app = {
         lucide.createIcons();
     },
 
-    saveInvoice: function (e) {
+    saveInvoice: async function (e) {
         e.preventDefault();
         try {
             const form = e.target;
@@ -445,6 +640,16 @@ window.app = {
                 const index = this.data.invoices.findIndex(i => i.id === existingId);
                 if (index !== -1) {
                     this.data.invoices[index] = { ...this.data.invoices[index], ...invoiceData };
+                }
+            }
+
+            // Sauvegarder dans Supabase si configuré
+            if (this.useSupabase) {
+                try {
+                    await this.saveInvoiceToSupabase(invoiceData);
+                } catch (error) {
+                    console.error('Erreur Supabase:', error);
+                    // Continuer quand même, les données sont dans le tableau local
                 }
             }
 
@@ -689,7 +894,7 @@ window.app = {
         }
     },
 
-    updateStatus: function (newStatus) {
+    updateStatus: async function (newStatus) {
         const inv = this.data.invoices.find(i => i.id === this.currentInvoiceId);
         if (inv) {
             inv.status = newStatus;
@@ -697,13 +902,32 @@ window.app = {
             else if (newStatus === 'PENDING' || newStatus === 'CANCELLED' || newStatus === 'REFUNDED') inv.paidAmount = 0;
             else if (newStatus === 'PARTIAL') inv.paidAmount = inv.paidAmount != null ? inv.paidAmount : 0;
 
+            // Sauvegarder dans Supabase si configuré
+            if (this.useSupabase) {
+                try {
+                    await this.saveInvoiceToSupabase(inv);
+                } catch (error) {
+                    console.error('Erreur Supabase:', error);
+                }
+            }
+
             this.saveData();
             this.showInvoice(this.currentInvoiceId);
         }
     },
 
-    deleteInvoice: function (id) {
+    deleteInvoice: async function (id) {
         if (confirm('Supprimer cette facture ?')) {
+            // Supprimer de Supabase si configuré
+            if (this.useSupabase) {
+                try {
+                    await this.deleteInvoiceFromSupabase(id);
+                } catch (error) {
+                    console.error('Erreur Supabase:', error);
+                    alert('Erreur lors de la suppression dans Supabase. La facture a été supprimée localement.');
+                }
+            }
+
             this.data.invoices = this.data.invoices.filter(i => i.id !== id);
             this.saveData();
             this.navigate('dashboard');
@@ -714,7 +938,85 @@ window.app = {
         this.navigate('dashboard');
     },
 
-    loadSettings: function () {
+    // Charger les paramètres depuis Supabase
+    loadSettingsFromSupabase: async function() {
+        if (!this.useSupabase) return;
+
+        try {
+            const { data, error } = await this.supabaseClient
+                .from('settings')
+                .select('*')
+                .eq('user_id', 'default')
+                .single();
+
+            if (error && error.code !== 'PGRST116') { // PGRST116 = no rows returned
+                throw error;
+            }
+
+            if (data) {
+                this.data.settings = {
+                    taxRate: parseFloat(data.tax_rate) || 18,
+                    currency: data.currency || 'FCFA',
+                    store: {
+                        name: data.store_name || '',
+                        address: Array.isArray(data.store_address) ? data.store_address : (data.store_address ? [data.store_address] : ['', '']),
+                        phone: data.store_phone || '',
+                        email: data.store_email || '',
+                        logo: data.store_logo || 'logo_akg.png'
+                    }
+                };
+            }
+        } catch (error) {
+            console.error('Erreur lors du chargement des paramètres:', error);
+        }
+    },
+
+    // Sauvegarder les paramètres dans Supabase
+    saveSettingsToSupabase: async function(settings) {
+        if (!this.useSupabase) return;
+
+        try {
+            const settingsData = {
+                user_id: 'default', // Pour permettre plusieurs utilisateurs plus tard
+                tax_rate: settings.taxRate || 18,
+                currency: settings.currency || 'FCFA',
+                store_name: settings.store?.name || '',
+                store_address: Array.isArray(settings.store?.address) ? settings.store.address : (settings.store?.address ? [settings.store.address] : []),
+                store_phone: settings.store?.phone || '',
+                store_email: settings.store?.email || '',
+                store_logo: settings.store?.logo || 'logo_akg.png'
+            };
+
+            // Utiliser upsert pour créer ou mettre à jour
+            const { error } = await this.supabaseClient
+                .from('settings')
+                .upsert(settingsData, { onConflict: 'user_id' });
+
+            if (error) throw error;
+        } catch (error) {
+            console.error('Erreur lors de la sauvegarde des paramètres:', error);
+            throw error;
+        }
+    },
+
+    loadSettings: async function () {
+        if (this.useSupabase) {
+            try {
+                await this.loadSettingsFromSupabase();
+            } catch (error) {
+                console.error('Erreur lors du chargement depuis Supabase, fallback sur localStorage:', error);
+                this.loadSettingsFromLocalStorage();
+            }
+        } else {
+            this.loadSettingsFromLocalStorage();
+        }
+
+        // Appliquer les paramètres à l'interface
+        this.applySettingsToUI();
+    },
+
+    // Charger les paramètres depuis localStorage (fallback)
+    loadSettingsFromLocalStorage: function() {
         const stored = localStorage.getItem('akg85_settings');
         if (stored) {
             try {
@@ -725,6 +1027,10 @@ window.app = {
                 if (!Array.isArray(s.address)) s.address = s.address ? [s.address] : ['', ''];
             } catch (e) {}
         }
+    },
+
+    // Appliquer les paramètres chargés à l'interface
+    applySettingsToUI: function() {
 
         // Apply to Header Logo
         const logoImg = document.getElementById('header-logo');
@@ -748,7 +1054,7 @@ window.app = {
         }
     },
 
-    saveSettings: function (e) {
+    saveSettings: async function (e) {
         e.preventDefault();
         const form = e.target;
         if (!this.data.settings.store) this.data.settings.store = {};
@@ -765,7 +1071,19 @@ window.app = {
         this.data.settings.currency = form.currency.value;
         this.data.settings.taxRate = parseFloat(form.taxRate.value) || 18;
 
-        localStorage.setItem('akg85_settings', JSON.stringify(this.data.settings));
+        // Sauvegarder dans Supabase si configuré
+        if (this.useSupabase) {
+            try {
+                await this.saveSettingsToSupabase(this.data.settings);
+            } catch (error) {
+                console.error('Erreur Supabase:', error);
+                alert('Erreur lors de la sauvegarde dans Supabase. Les paramètres ont été enregistrés localement.');
+                // Fallback sur localStorage
+                localStorage.setItem('akg85_settings', JSON.stringify(this.data.settings));
+            }
+        } else {
+            localStorage.setItem('akg85_settings', JSON.stringify(this.data.settings));
+        }
 
         // Update live elements
         const logoImg = document.getElementById('header-logo');
