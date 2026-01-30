@@ -859,6 +859,7 @@ window.app = {
         // Sur mobile, désactiver temporairement le scale pour l'impression
         const paper = document.getElementById('invoice-preview-container');
         const scaleEl = document.getElementById('invoice-mobile-scale');
+        const scrollEl = document.getElementById('invoice-preview-scroll');
         
         if (paper && scaleEl) {
             // Sauvegarder l'état actuel
@@ -867,16 +868,26 @@ window.app = {
             const originalWidth = scaleEl.style.width;
             const originalHeight = scaleEl.style.height;
             const originalOverflow = scaleEl.style.overflow;
+            const originalScrollOverflow = scrollEl ? scrollEl.style.overflow : '';
+            const originalScrollMaxHeight = scrollEl ? scrollEl.style.maxHeight : '';
             
             // Forcer la désactivation du scale pour l'impression
-            paper.style.setProperty('transform', 'none', 'important');
-            paper.style.setProperty('transform-origin', 'top left', 'important');
+            if (scrollEl) {
+                scrollEl.style.setProperty('overflow', 'visible', 'important');
+                scrollEl.style.setProperty('max-height', 'none', 'important');
+            }
             scaleEl.style.setProperty('width', 'auto', 'important');
             scaleEl.style.setProperty('height', 'auto', 'important');
             scaleEl.style.setProperty('overflow', 'visible', 'important');
+            scaleEl.style.setProperty('transform', 'none', 'important');
+            paper.style.setProperty('transform', 'none', 'important');
+            paper.style.setProperty('transform-origin', 'top left', 'important');
+            paper.style.setProperty('width', '100%', 'important');
+            paper.style.setProperty('max-width', '100%', 'important');
             
             // Forcer un reflow
             void paper.offsetHeight;
+            void scaleEl.offsetHeight;
             
             // Attendre que le layout se stabilise
             setTimeout(() => {
@@ -885,6 +896,10 @@ window.app = {
                 
                 // Restaurer l'état après impression (avec un délai pour laisser le navigateur terminer)
                 setTimeout(() => {
+                    if (scrollEl) {
+                        scrollEl.style.overflow = originalScrollOverflow;
+                        scrollEl.style.maxHeight = originalScrollMaxHeight;
+                    }
                     paper.style.transform = originalTransform;
                     paper.style.transformOrigin = originalTransformOrigin;
                     scaleEl.style.width = originalWidth;
@@ -894,14 +909,14 @@ window.app = {
                     // Réappliquer le scale mobile
                     this.applyMobileInvoiceScale();
                 }, 500);
-            }, 200);
+            }, 300);
         } else {
             setTimeout(() => {
                 window.print();
                 setTimeout(() => {
                     document.body.classList.remove('printing');
                 }, 500);
-            }, 200);
+            }, 300);
         }
     },
 
@@ -916,50 +931,167 @@ window.app = {
         document.body.appendChild(loadingMsg);
 
         try {
-            const container = document.getElementById('invoice-preview-container');
-            if (!container) {
-                throw new Error("Conteneur de facture non trouvé");
-            }
+            // Régénérer le HTML dans un conteneur temporaire propre (sans scale)
+            const settings = this.data.settings.store;
+            
+            // Format devise
+            const formatCurrency = (amount) => {
+                const formatted = new Intl.NumberFormat('de-DE', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                }).format(amount);
+                return 'F.CFA ' + formatted;
+            };
 
-            // Créer un conteneur temporaire hors écran pour la capture
-            const tempContainer = container.cloneNode(true);
+            // Format date
+            const formatDateShort = (dateStr) => {
+                if (!dateStr) return '';
+                const d = new Date(dateStr);
+                const months = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."];
+                return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+            };
+
+            // Créer un conteneur temporaire avec le HTML complet
+            const tempContainer = document.createElement('div');
             tempContainer.id = 'temp-invoice-container';
             tempContainer.style.cssText = `
                 position: absolute;
                 left: -9999px;
                 top: 0;
                 width: 794px;
-                transform: none !important;
-                transform-origin: top left !important;
                 background: white;
+                font-family: Arial, Helvetica, sans-serif;
             `;
             
-            // S'assurer que toutes les images sont chargées dans le clone
+            tempContainer.innerHTML = `
+                <div class="invoice-header" style="padding: 24px; position: relative; overflow: hidden; background-color: #2563eb; color: #ffffff; font-family: Arial, Helvetica, sans-serif;">
+                    <div class="invoice-header-inner" style="display: flex; justify-content: space-between; align-items: center; position: relative; z-index: 10; gap: 20px;">
+                        <div class="invoice-header-left" style="flex: 1; display: flex; align-items: center; min-width: 0;">
+                            <img src="carte-visite.png" alt="AKG 85" class="invoice-carte" style="height: 120px; max-width: 320px; width: auto; object-fit: contain;" crossorigin="anonymous">
+                        </div>
+                        <div class="invoice-header-right" style="text-align: right; flex-shrink: 0;">
+                            <div class="invoice-title" style="font-size: 48px; font-weight: bold; margin-bottom: 16px; letter-spacing: 0.02em;">FACTURE</div>
+                            <div class="invoice-meta" style="font-size: 16px; line-height: 1.5;">
+                                <div style="margin-bottom: 4px;">Numéro: ${inv.number}</div>
+                                <div style="margin-bottom: 4px;">Date ${formatDateShort(inv.date)}</div>
+                                <div>Date d'échéance: ${inv.dueDate ? formatDateShort(inv.dueDate) : 'À la réception'}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="invoice-to-from" style="display: flex; justify-content: space-between; padding: 24px; border-bottom: 2px solid #e5e7eb; gap: 24px; font-family: Arial, Helvetica, sans-serif; color: #000000;">
+                    <div class="invoice-to-from-left" style="flex: 1; min-width: 0;">
+                        <div style="font-weight: 600; font-size: 16px; margin-bottom: 8px; color: #000000;">FACTURE À:</div>
+                        <div style="font-size: 17px; font-weight: 700; color: #000000;">${inv.clientName}</div>
+                        ${inv.clientPhone ? `<div style="font-size: 14px; color: #374151; margin-top: 4px;">${inv.clientPhone}</div>` : ''}
+                        ${inv.clientAddress ? `<div style="font-size: 14px; color: #374151; margin-top: 4px;">${inv.clientAddress}</div>` : ''}
+                        ${inv.clientEmail ? `<div style="font-size: 14px; color: #374151; margin-top: 4px;">${inv.clientEmail}</div>` : ''}
+                    </div>
+                    <div class="invoice-to-from-right" style="flex: 1; text-align: right; min-width: 0;">
+                        <div style="font-weight: 600; font-size: 16px; margin-bottom: 8px; color: #000000;">FACTURE DE:</div>
+                        <div style="font-size: 17px; font-weight: 700; color: #000000;">${settings.name}</div>
+                        ${settings.phone ? `<div style="font-size: 14px; color: #374151; margin-top: 4px;">${settings.phone}</div>` : ''}
+                        ${settings.email ? `<div style="font-size: 14px; color: #374151; margin-top: 4px;">${settings.email}</div>` : ''}
+                        ${Array.isArray(settings.address) ? settings.address.map(l => `<div style="font-size: 14px; color: #374151; margin-top: 4px;">${l}</div>`).join('') : (settings.address ? `<div style="font-size: 14px; color: #374151; margin-top: 4px;">${settings.address}</div>` : '')}
+                    </div>
+                </div>
+                <div class="invoice-items-wrap" style="padding: 24px; overflow-x: auto; font-family: Arial, Helvetica, sans-serif;">
+                    <table class="invoice-items-table" style="width: 100%; min-width: 400px; border-collapse: collapse; font-size: 15px;">
+                        <thead>
+                            <tr style="background-color: #2563eb; color: #ffffff;">
+                                <th style="text-align: left; padding: 12px 16px; font-weight: 600;">Description</th>
+                                <th style="text-align: center; padding: 12px 16px; font-weight: 600; width: 96px;">Quantité</th>
+                                <th style="text-align: right; padding: 12px 16px; font-weight: 600; width: 140px;">Prix unitaire</th>
+                                <th style="text-align: right; padding: 12px 16px; font-weight: 600; width: 140px;">Montant</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${inv.items.map((item) => `
+                                <tr style="background-color: #ffffff;">
+                                    <td style="padding: 12px 16px; color: #000000; border-bottom: 1px solid #e5e7eb;">${item.designation}</td>
+                                    <td style="padding: 12px 16px; text-align: center; color: #000000; border-bottom: 1px solid #e5e7eb;">${item.quantity}</td>
+                                    <td style="padding: 12px 16px; text-align: right; color: #000000; border-bottom: 1px solid #e5e7eb;">${formatCurrency(item.unitPrice)}</td>
+                                    <td style="padding: 12px 16px; text-align: right; font-weight: 600; color: #000000; border-bottom: 1px solid #e5e7eb;">${formatCurrency(item.total)}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+                <div class="invoice-summary-wrap" style="display: flex; justify-content: flex-end; padding: 0 24px 24px; font-family: Arial, Helvetica, sans-serif;">
+                    <div class="invoice-summary" style="width: 320px; max-width: 100%; color: #000000;">
+                        <div style="display: flex; justify-content: space-between; font-size: 16px; margin-bottom: 12px;">
+                            <span style="font-weight: 600;">SOUS-TOTAL</span>
+                            <span style="font-weight: 600;">${formatCurrency(inv.subtotal)}</span>
+                        </div>
+                        ${inv.taxRate > 0 ? `
+                        <div style="display: flex; justify-content: space-between; font-size: 16px; margin-bottom: 12px;">
+                            <span>TVA (${inv.taxRate}%)</span>
+                            <span>${formatCurrency(inv.taxAmount)}</span>
+                        </div>
+                        ` : ''}
+                        ${(inv.discountAmount || 0) > 0 ? `
+                        <div style="display: flex; justify-content: space-between; font-size: 16px; margin-bottom: 12px; color: #16a34a;">
+                            <span>Remise</span>
+                            <span>-${formatCurrency(inv.discountAmount)}</span>
+                        </div>
+                        ` : ''}
+                        <div style="display: flex; justify-content: space-between; font-size: 18px; font-weight: bold; padding-top: 8px; border-top: 2px solid #d1d5db; margin-bottom: 12px;">
+                            <span>TOTAL</span>
+                            <span>${formatCurrency(inv.total)}</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; font-size: 16px; margin-bottom: 12px;">
+                            <span>PAYÉE</span>
+                            <span>${formatCurrency(inv.status === 'PAID' ? inv.total : (inv.paidAmount || 0))}</span>
+                        </div>
+                        <div style="padding: 14px 16px; display: flex; justify-content: space-between; align-items: center; font-weight: bold; font-size: 18px; background-color: #000000; color: #ffffff;">
+                            <span>SOLDE À PAYER</span>
+                            <span>${formatCurrency(inv.status === 'PAID' ? 0 : (inv.total - (inv.paidAmount || 0)))}</span>
+                        </div>
+                    </div>
+                </div>
+                ${inv.notes ? `
+                <div class="invoice-notes" style="padding: 0 24px 24px; font-family: Arial, Helvetica, sans-serif;">
+                    <div style="font-weight: 600; margin-bottom: 8px; font-size: 14px; color: #000000;">Notes:</div>
+                    <div style="font-size: 14px; color: #374151; white-space: pre-wrap;">${inv.notes}</div>
+                </div>
+                ` : ''}
+                <div class="invoice-footer" style="text-align: center; padding: 24px; border-top: 2px solid #e5e7eb; font-family: Arial, Helvetica, sans-serif;">
+                    <div style="font-size: 18px; font-weight: 700; color: #2563eb;">MERCI POUR VOTRE CONFIANCE</div>
+                </div>
+            `;
+
+            document.body.appendChild(tempContainer);
+            
+            // Attendre que les images se chargent
             const tempImages = tempContainer.querySelectorAll('img');
             const imagePromises = Array.from(tempImages).map(img => {
-                if (img.complete && img.naturalWidth > 0) return Promise.resolve();
                 return new Promise((resolve) => {
+                    if (img.complete && img.naturalWidth > 0) {
+                        resolve();
+                        return;
+                    }
                     const newImg = new Image();
                     newImg.crossOrigin = 'anonymous';
                     newImg.onload = () => {
                         img.src = newImg.src;
                         resolve();
                     };
-                    newImg.onerror = resolve; // Continuer même si l'image échoue
-                    newImg.src = img.src || img.getAttribute('src') || '';
+                    newImg.onerror = () => resolve(); // Continuer même si l'image échoue
+                    // Utiliser le chemin relatif ou absolu
+                    const imgSrc = img.getAttribute('src') || img.src;
+                    newImg.src = imgSrc.startsWith('http') ? imgSrc : (window.location.origin + (imgSrc.startsWith('/') ? '' : '/') + imgSrc);
                     setTimeout(resolve, 3000); // Timeout après 3 secondes
                 });
             });
 
-            document.body.appendChild(tempContainer);
             await Promise.all(imagePromises);
             
-            // Attendre un peu pour que le layout se stabilise
+            // Attendre que le layout se stabilise
             await new Promise(resolve => setTimeout(resolve, 500));
 
             // Détecter si on est sur mobile pour ajuster le scale
             const isMobile = window.innerWidth <= 768;
-            const canvasScale = isMobile ? 1 : 2; // Scale 1 sur mobile pour éviter les problèmes
+            const canvasScale = isMobile ? 1.5 : 2;
 
             // Use html2canvas to capture the invoice
             const canvas = await html2canvas(tempContainer, {
