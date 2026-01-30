@@ -1177,37 +1177,73 @@ h4 {
     display: none !important;
 }
 
-/* Print styles - facture pleine page, même qualité */
+/* Print styles - facture pleine page, même qualité - Optimisé pour mobile */
 @media print {
+    /* Forcer les couleurs exactes (important pour les fonds bleus) */
     * {
         -webkit-print-color-adjust: exact !important;
         print-color-adjust: exact !important;
         color-adjust: exact !important;
     }
 
-    body {
+    /* Reset du body */
+    html, body {
         background-color: white !important;
         padding: 0 !important;
         margin: 0 !important;
+        width: 100% !important;
+        height: auto !important;
+        overflow: visible !important;
     }
 
-    .splash {
-        display: none !important;
-    }
-
+    /* Masquer les éléments non nécessaires */
+    .splash,
     .no-print,
     .header,
     .fab,
-    .container-nav {
+    .container-nav,
+    .view-section:not(#view-detail) {
+        display: none !important;
+        visibility: hidden !important;
+    }
+    
+    /* Forcer l'affichage de la vue détail même si elle a la classe hidden */
+    .hidden {
+        display: block !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+    }
+    
+    /* Sauf pour les éléments qu'on veut vraiment masquer */
+    .hidden.no-print,
+    .hidden.header,
+    .hidden.fab {
         display: none !important;
     }
 
+    /* Container principal */
     .container {
         max-width: 100% !important;
         padding: 0 !important;
         margin: 0 !important;
+        width: 100% !important;
     }
 
+    /* Afficher uniquement la vue détail */
+    #view-detail {
+        display: block !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+    }
+    
+    /* Forcer l'affichage même si la classe hidden est présente */
+    #view-detail.hidden {
+        display: block !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+    }
+
+    /* Wrapper scroll - complètement désactivé */
     .invoice-preview-scroll {
         overflow: visible !important;
         max-height: none !important;
@@ -1217,28 +1253,40 @@ h4 {
         background: transparent !important;
         display: block !important;
         position: static !important;
+        width: 100% !important;
+        height: auto !important;
     }
 
+    /* Scale mobile - complètement désactivé */
     .invoice-mobile-scale {
-        width: auto !important;
+        width: 100% !important;
         height: auto !important;
         overflow: visible !important;
         transform: none !important;
         position: static !important;
         display: block !important;
+        margin: 0 !important;
+        padding: 0 !important;
     }
 
+    /* Conteneur de la facture */
     #invoice-preview-container,
     .paper-invoice {
         box-shadow: none !important;
-        margin: 0 !important;
+        margin: 0 auto !important;
+        padding: 0 !important;
         width: 100% !important;
         min-width: 100% !important;
         max-width: 100% !important;
         transform: none !important;
         transform-origin: top left !important;
         page-break-inside: avoid;
-        position: static !important;
+        position: relative !important;
+        background: white !important;
+        display: block !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+        height: auto !important;
     }
 
     /* Assurer que les images s'impriment correctement */
@@ -1248,34 +1296,82 @@ h4 {
         height: auto !important;
         page-break-inside: avoid;
         display: block !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
     }
 
     /* Éviter les coupures de page dans les sections importantes */
     .invoice-header,
     .invoice-to-from,
     .invoice-items-wrap,
-    .invoice-summary-wrap {
+    .invoice-summary-wrap,
+    .invoice-footer {
         page-break-inside: avoid;
+        break-inside: avoid;
     }
 
-    /* Styles spécifiques pour mobile en impression */
+    /* Tableau des articles */
+    .invoice-items-table {
+        page-break-inside: auto;
+    }
+
+    .invoice-items-table tr {
+        page-break-inside: avoid;
+        page-break-after: auto;
+    }
+
+    /* Styles spécifiques pour le format d'impression */
     @page {
         size: A4;
         margin: 0;
     }
 
+    /* Masquer les éléments de carte */
     .card {
         box-shadow: none !important;
         border: none !important;
+        background: transparent !important;
+    }
+
+    /* Assurer que le texte est noir pour l'impression */
+    .paper-invoice,
+    #invoice-preview-container {
+        color: #000000 !important;
+    }
+
+    /* Forcer l'affichage des couleurs de fond */
+    .invoice-header {
+        background-color: #2563eb !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+    }
+
+    .invoice-items-table thead tr {
+        background-color: #2563eb !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+    }
+
+    .invoice-summary-wrap .invoice-summary > div:last-child {
+        background-color: #000000 !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
     }
 }
 
-/* Classe pour forcer les styles lors de l'impression */
+/* Classe pour forcer les styles lors de la préparation de l'impression */
 body.printing .invoice-mobile-scale,
 body.printing #invoice-preview-container {
     transform: none !important;
     transform-origin: top left !important;
-    width: auto !important;
-    height: auto !important;
+    width: 100% !important;
+    max-width: 100% !important;
     overflow: visible !important;
+}
+
+body.printing .invoice-preview-scroll {
+    overflow: visible !important;
+    max-height: none !important;
+    display: block !important;
+    position: static !important;
 }

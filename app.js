@@ -79,7 +79,12 @@ window.app = {
                 // Migrer depuis localStorage si des données existent
                 await this.migrateFromLocalStorage();
             } catch (error) {
-                console.error('Erreur lors du chargement depuis Supabase:', error);
+                // Ne logger que si Supabase est vraiment configuré
+                if (window.supabaseConfig && 
+                    window.supabaseConfig.url !== 'YOUR_SUPABASE_URL' &&
+                    window.supabaseConfig.anonKey !== 'YOUR_SUPABASE_ANON_KEY') {
+                    console.error('Erreur lors du chargement depuis Supabase:', error);
+                }
                 // Fallback sur localStorage en cas d'erreur
                 this.useSupabase = false;
                 this.loadInvoicesFromLocalStorage();
@@ -155,7 +160,7 @@ window.app = {
 
     // Charger les factures depuis Supabase
     loadInvoicesFromSupabase: async function() {
-        if (!this.useSupabase) return;
+        if (!this.useSupabase || !this.supabaseClient) return;
 
         try {
             const { data, error } = await this.supabaseClient
@@ -205,8 +210,13 @@ window.app = {
                 await this.saveData();
             }
         } catch (error) {
-            console.error('Erreur lors du chargement des factures:', error);
-            throw error;
+            // Ne logger que si Supabase est vraiment configuré (évite les erreurs de connexion)
+            if (this.useSupabase && window.supabaseConfig && 
+                window.supabaseConfig.url !== 'YOUR_SUPABASE_URL' &&
+                window.supabaseConfig.anonKey !== 'YOUR_SUPABASE_ANON_KEY') {
+                console.error('Erreur lors du chargement des factures:', error);
+            }
+            throw error; // Re-throw pour que le fallback fonctionne
         }
     },
 
@@ -329,7 +339,7 @@ window.app = {
             backBtn.classList.remove('hidden');
         }
 
-        lucide.createIcons();
+        if (typeof lucide !== 'undefined') lucide.createIcons();
         window.scrollTo(0, 0);
     },
 
@@ -488,7 +498,7 @@ window.app = {
                     <p class="empty-state-text">${hasFilters ? 'Aucune facture ne correspond à vos critères' : 'Créez votre première facture'}</p>
                 </div>
             `;
-            lucide.createIcons();
+            if (typeof lucide !== 'undefined') lucide.createIcons();
             return;
         }
 
@@ -585,7 +595,7 @@ window.app = {
         });
         listEl.appendChild(cardContainer);
 
-        lucide.createIcons();
+        if (typeof lucide !== 'undefined') lucide.createIcons();
     },
 
     saveInvoice: async function (e) {
@@ -853,70 +863,151 @@ window.app = {
     },
 
     printInvoice: function () {
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth <= 768;
+        
+        // Préparer l'impression
+        this.prepareForPrint();
+        
+        // Sur mobile, utiliser une approche différente
+        if (isMobile) {
+            // Sur mobile, on utilise les événements beforeprint/afterprint
+            // qui sont mieux supportés
+            const restorePrint = () => {
+                this.restoreAfterPrint();
+                window.removeEventListener('afterprint', restorePrint);
+            };
+            
+            window.addEventListener('afterprint', restorePrint);
+            
+            // Petit délai pour s'assurer que les styles sont appliqués
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    window.print();
+                });
+            });
+        } else {
+            // Sur desktop, approche standard
+            setTimeout(() => {
+                window.print();
+                setTimeout(() => {
+                    this.restoreAfterPrint();
+                }, 500);
+            }, 100);
+        }
+    },
+
+    prepareForPrint: function () {
+        // S'assurer que la vue détail est visible
+        const viewDetail = document.getElementById('view-detail');
+        if (viewDetail) {
+            viewDetail.classList.remove('hidden');
+            viewDetail.style.display = 'block';
+            viewDetail.style.visibility = 'visible';
+        }
+        
         // Ajouter une classe pour forcer les styles d'impression
         document.body.classList.add('printing');
         
-        // Sur mobile, désactiver temporairement le scale pour l'impression
+        // Désactiver temporairement le scale pour l'impression
         const paper = document.getElementById('invoice-preview-container');
         const scaleEl = document.getElementById('invoice-mobile-scale');
         const scrollEl = document.getElementById('invoice-preview-scroll');
         
+        // Sauvegarder l'état actuel dans l'objet app pour pouvoir le restaurer
         if (paper && scaleEl) {
-            // Sauvegarder l'état actuel
-            const originalTransform = paper.style.transform;
-            const originalTransformOrigin = paper.style.transformOrigin;
-            const originalWidth = scaleEl.style.width;
-            const originalHeight = scaleEl.style.height;
-            const originalOverflow = scaleEl.style.overflow;
-            const originalScrollOverflow = scrollEl ? scrollEl.style.overflow : '';
-            const originalScrollMaxHeight = scrollEl ? scrollEl.style.maxHeight : '';
+            this._printState = {
+                viewDetailHidden: viewDetail ? viewDetail.classList.contains('hidden') : false,
+                viewDetailDisplay: viewDetail ? viewDetail.style.display : '',
+                viewDetailVisibility: viewDetail ? viewDetail.style.visibility : '',
+                paperTransform: paper.style.transform,
+                paperTransformOrigin: paper.style.transformOrigin,
+                paperWidth: paper.style.width,
+                paperMaxWidth: paper.style.maxWidth,
+                scaleElWidth: scaleEl.style.width,
+                scaleElHeight: scaleEl.style.height,
+                scaleElOverflow: scaleEl.style.overflow,
+                scaleElTransform: scaleEl.style.transform,
+                scrollElOverflow: scrollEl ? scrollEl.style.overflow : '',
+                scrollElMaxHeight: scrollEl ? scrollEl.style.maxHeight : '',
+                scrollElDisplay: scrollEl ? scrollEl.style.display : ''
+            };
             
             // Forcer la désactivation du scale pour l'impression
             if (scrollEl) {
                 scrollEl.style.setProperty('overflow', 'visible', 'important');
                 scrollEl.style.setProperty('max-height', 'none', 'important');
+                scrollEl.style.setProperty('display', 'block', 'important');
             }
+            
             scaleEl.style.setProperty('width', 'auto', 'important');
             scaleEl.style.setProperty('height', 'auto', 'important');
             scaleEl.style.setProperty('overflow', 'visible', 'important');
             scaleEl.style.setProperty('transform', 'none', 'important');
+            scaleEl.style.setProperty('position', 'static', 'important');
+            
             paper.style.setProperty('transform', 'none', 'important');
             paper.style.setProperty('transform-origin', 'top left', 'important');
             paper.style.setProperty('width', '100%', 'important');
             paper.style.setProperty('max-width', '100%', 'important');
+            paper.style.setProperty('margin', '0', 'important');
+            paper.style.setProperty('display', 'block', 'important');
+            paper.style.setProperty('visibility', 'visible', 'important');
             
-            // Forcer un reflow
+            // Forcer un reflow pour appliquer les changements
             void paper.offsetHeight;
             void scaleEl.offsetHeight;
+            if (scrollEl) void scrollEl.offsetHeight;
+            if (viewDetail) void viewDetail.offsetHeight;
+        }
+    },
+
+    restoreAfterPrint: function () {
+        const paper = document.getElementById('invoice-preview-container');
+        const scaleEl = document.getElementById('invoice-mobile-scale');
+        const scrollEl = document.getElementById('invoice-preview-scroll');
+        const viewDetail = document.getElementById('view-detail');
+        
+        // Restaurer l'état sauvegardé
+        if (paper && scaleEl && this._printState) {
+            if (viewDetail) {
+                if (this._printState.viewDetailHidden) {
+                    viewDetail.classList.add('hidden');
+                } else {
+                    viewDetail.classList.remove('hidden');
+                }
+                viewDetail.style.display = this._printState.viewDetailDisplay;
+                viewDetail.style.visibility = this._printState.viewDetailVisibility;
+            }
             
-            // Attendre que le layout se stabilise
-            setTimeout(() => {
-                // Déclencher l'impression
-                window.print();
-                
-                // Restaurer l'état après impression (avec un délai pour laisser le navigateur terminer)
-                setTimeout(() => {
-                    if (scrollEl) {
-                        scrollEl.style.overflow = originalScrollOverflow;
-                        scrollEl.style.maxHeight = originalScrollMaxHeight;
-                    }
-                    paper.style.transform = originalTransform;
-                    paper.style.transformOrigin = originalTransformOrigin;
-                    scaleEl.style.width = originalWidth;
-                    scaleEl.style.height = originalHeight;
-                    scaleEl.style.overflow = originalOverflow;
-                    document.body.classList.remove('printing');
-                    // Réappliquer le scale mobile
-                    this.applyMobileInvoiceScale();
-                }, 500);
-            }, 300);
-        } else {
-            setTimeout(() => {
-                window.print();
-                setTimeout(() => {
-                    document.body.classList.remove('printing');
-                }, 500);
-            }, 300);
+            if (scrollEl) {
+                scrollEl.style.overflow = this._printState.scrollElOverflow;
+                scrollEl.style.maxHeight = this._printState.scrollElMaxHeight;
+                scrollEl.style.display = this._printState.scrollElDisplay;
+            }
+            
+            paper.style.transform = this._printState.paperTransform;
+            paper.style.transformOrigin = this._printState.paperTransformOrigin;
+            paper.style.width = this._printState.paperWidth;
+            paper.style.maxWidth = this._printState.paperMaxWidth;
+            paper.style.margin = '';
+            paper.style.display = '';
+            paper.style.visibility = '';
+            
+            scaleEl.style.width = this._printState.scaleElWidth;
+            scaleEl.style.height = this._printState.scaleElHeight;
+            scaleEl.style.overflow = this._printState.scaleElOverflow;
+            scaleEl.style.transform = this._printState.scaleElTransform;
+            scaleEl.style.position = '';
+            
+            // Nettoyer l'état sauvegardé
+            this._printState = null;
+        }
+        
+        document.body.classList.remove('printing');
+        
+        // Réappliquer le scale mobile si nécessaire
+        if (window.innerWidth <= 768) {
+            this.applyMobileInvoiceScale();
         }
     },
 
@@ -1259,7 +1350,7 @@ window.app = {
 
     // Charger les paramètres depuis Supabase
     loadSettingsFromSupabase: async function() {
-        if (!this.useSupabase) return;
+        if (!this.useSupabase || !this.supabaseClient) return;
 
         try {
             const { data, error } = await this.supabaseClient
@@ -1286,7 +1377,13 @@ window.app = {
                 };
             }
         } catch (error) {
-            console.error('Erreur lors du chargement des paramètres:', error);
+            // Ne logger que si Supabase est vraiment configuré (évite les erreurs de connexion)
+            if (this.useSupabase && window.supabaseConfig && 
+                window.supabaseConfig.url !== 'YOUR_SUPABASE_URL' &&
+                window.supabaseConfig.anonKey !== 'YOUR_SUPABASE_ANON_KEY') {
+                console.error('Erreur lors du chargement des paramètres:', error);
+            }
+            throw error; // Re-throw pour que le fallback fonctionne
         }
     },
 
@@ -1323,7 +1420,12 @@ window.app = {
             try {
                 await this.loadSettingsFromSupabase();
             } catch (error) {
-                console.error('Erreur lors du chargement depuis Supabase, fallback sur localStorage:', error);
+                // Ne logger que si Supabase est vraiment configuré
+                if (window.supabaseConfig && 
+                    window.supabaseConfig.url !== 'YOUR_SUPABASE_URL' &&
+                    window.supabaseConfig.anonKey !== 'YOUR_SUPABASE_ANON_KEY') {
+                    console.error('Erreur lors du chargement depuis Supabase, fallback sur localStorage:', error);
+                }
                 this.loadSettingsFromLocalStorage();
             }
         } else {
