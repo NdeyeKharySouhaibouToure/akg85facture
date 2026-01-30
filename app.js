@@ -21,14 +21,33 @@ window.app = {
 
     // Obtenir le client Supabase
     getSupabaseClient: function() {
+        console.log('[Supabase] Initialisation du client Supabase...');
+        console.log('[Supabase] supabase disponible:', typeof supabase !== 'undefined');
+        console.log('[Supabase] window.supabaseConfig:', window.supabaseConfig);
+        
         if (!this.supabaseClient && typeof supabase !== 'undefined' && window.supabaseConfig) {
-            if (window.supabaseConfig.url && window.supabaseConfig.url !== 'YOUR_SUPABASE_URL' &&
-                window.supabaseConfig.anonKey && window.supabaseConfig.anonKey !== 'YOUR_SUPABASE_ANON_KEY') {
-                this.supabaseClient = supabase.createClient(
-                    window.supabaseConfig.url,
-                    window.supabaseConfig.anonKey
-                );
+            const url = window.supabaseConfig.url;
+            const anonKey = window.supabaseConfig.anonKey;
+            const isUrlValid = url && url !== 'YOUR_SUPABASE_URL';
+            const isKeyValid = anonKey && anonKey !== 'YOUR_SUPABASE_ANON_KEY';
+            
+            console.log('[Supabase] URL valide:', isUrlValid, isUrlValid ? '✓' : '✗');
+            console.log('[Supabase] Clé valide:', isKeyValid, isKeyValid ? '✓' : '✗');
+            
+            if (isUrlValid && isKeyValid) {
+                this.supabaseClient = supabase.createClient(url, anonKey);
                 this.useSupabase = true;
+                console.log('[Supabase] ✓ Client Supabase initialisé avec succès');
+            } else {
+                console.warn('[Supabase] ✗ Configuration invalide - Supabase désactivé');
+                console.warn('[Supabase] Vérifiez que SUPABASE_URL et SUPABASE_ANON_KEY sont configurés');
+            }
+        } else {
+            if (typeof supabase === 'undefined') {
+                console.warn('[Supabase] ✗ Bibliothèque Supabase non chargée');
+            }
+            if (!window.supabaseConfig) {
+                console.warn('[Supabase] ✗ window.supabaseConfig non défini');
             }
         }
         return this.supabaseClient;
@@ -73,25 +92,31 @@ window.app = {
         await this.loadSettings();
 
         // Charger les données
+        console.log('[App] Chargement des données - useSupabase:', this.useSupabase);
         if (this.useSupabase) {
             try {
                 await this.loadInvoicesFromSupabase();
+                console.log('[App] ✓ Factures chargées depuis Supabase:', this.data.invoices.length);
                 // Migrer depuis localStorage si des données existent
                 await this.migrateFromLocalStorage();
             } catch (error) {
+                console.error('[App] ✗ Erreur lors du chargement depuis Supabase, fallback sur localStorage');
                 // Ne logger que si Supabase est vraiment configuré
                 if (window.supabaseConfig && 
                     window.supabaseConfig.url !== 'YOUR_SUPABASE_URL' &&
                     window.supabaseConfig.anonKey !== 'YOUR_SUPABASE_ANON_KEY') {
-                    console.error('Erreur lors du chargement depuis Supabase:', error);
+                    console.error('[App] Détails de l\'erreur:', error);
                 }
                 // Fallback sur localStorage en cas d'erreur
                 this.useSupabase = false;
                 this.loadInvoicesFromLocalStorage();
+                console.log('[App] Factures chargées depuis localStorage:', this.data.invoices.length);
             }
         } else {
+            console.log('[App] Supabase non configuré, utilisation de localStorage');
             // Utiliser localStorage si Supabase n'est pas configuré
             this.loadInvoicesFromLocalStorage();
+            console.log('[App] Factures chargées depuis localStorage:', this.data.invoices.length);
         }
 
         const searchInput = document.getElementById('search-input');
@@ -160,15 +185,28 @@ window.app = {
 
     // Charger les factures depuis Supabase
     loadInvoicesFromSupabase: async function() {
-        if (!this.useSupabase || !this.supabaseClient) return;
+        console.log('[Supabase] loadInvoicesFromSupabase appelé');
+        console.log('[Supabase] useSupabase:', this.useSupabase);
+        console.log('[Supabase] supabaseClient:', this.supabaseClient ? '✓' : '✗');
+        
+        if (!this.useSupabase || !this.supabaseClient) {
+            console.warn('[Supabase] ✗ Impossible de charger - Supabase non initialisé');
+            return;
+        }
 
         try {
+            console.log('[Supabase] Requête SELECT * FROM invoices...');
             const { data, error } = await this.supabaseClient
                 .from('invoices')
                 .select('*')
                 .order('date', { ascending: false });
 
-            if (error) throw error;
+            if (error) {
+                console.error('[Supabase] ✗ Erreur Supabase:', error);
+                throw error;
+            }
+
+            console.log('[Supabase] ✓ Données reçues:', data ? data.length : 0, 'facture(s)');
 
             if (data && data.length > 0) {
                 // Convertir les données Supabase au format de l'app
@@ -195,7 +233,9 @@ window.app = {
                     createdAt: inv.created_at,
                     updatedAt: inv.updated_at
                 }));
+                console.log('[Supabase] ✓ Factures chargées dans app.data.invoices:', this.data.invoices.length);
             } else {
+                console.log('[Supabase] Aucune facture trouvée, création d\'une facture exemple');
                 // Aucune facture, créer une facture exemple
                 this.data.invoices = [{
                     id: 'FAC-001', number: 'FAC-001',
@@ -210,11 +250,17 @@ window.app = {
                 await this.saveData();
             }
         } catch (error) {
+            console.error('[Supabase] ✗ Erreur lors du chargement des factures:', error);
             // Ne logger que si Supabase est vraiment configuré (évite les erreurs de connexion)
             if (this.useSupabase && window.supabaseConfig && 
                 window.supabaseConfig.url !== 'YOUR_SUPABASE_URL' &&
                 window.supabaseConfig.anonKey !== 'YOUR_SUPABASE_ANON_KEY') {
-                console.error('Erreur lors du chargement des factures:', error);
+                console.error('[Supabase] Détails de l\'erreur:', {
+                    message: error.message,
+                    details: error.details,
+                    hint: error.hint,
+                    code: error.code
+                });
             }
             throw error; // Re-throw pour que le fallback fonctionne
         }
@@ -222,7 +268,10 @@ window.app = {
 
     // Sauvegarder une facture dans Supabase
     saveInvoiceToSupabase: async function(invoice) {
-        if (!this.useSupabase) return;
+        if (!this.useSupabase || !this.supabaseClient) {
+            console.warn('Supabase non configuré ou client non disponible');
+            return;
+        }
 
         try {
             const invoiceData = {
@@ -235,25 +284,32 @@ window.app = {
                 date: invoice.date,
                 due_date: invoice.dueDate || null,
                 items: invoice.items,
-                subtotal: invoice.subtotal,
+                subtotal: parseFloat(invoice.subtotal) || 0,
                 discount_type: invoice.discountType || 'FIXED',
-                discount_value: invoice.discountValue || 0,
-                discount_amount: invoice.discountAmount || 0,
-                tax_rate: invoice.taxRate || 0,
-                tax_amount: invoice.taxAmount || 0,
-                total: invoice.total,
+                discount_value: parseFloat(invoice.discountValue) || 0,
+                discount_amount: parseFloat(invoice.discountAmount) || 0,
+                tax_rate: parseFloat(invoice.taxRate) || 0,
+                tax_amount: parseFloat(invoice.taxAmount) || 0,
+                total: parseFloat(invoice.total) || 0,
                 notes: invoice.notes || null,
                 status: invoice.status || 'PENDING',
-                paid_amount: invoice.paidAmount || 0
+                paid_amount: parseFloat(invoice.paidAmount) || 0
             };
 
-            const { error } = await this.supabaseClient
+            console.log('💾 Tentative de sauvegarde dans Supabase:', invoiceData.id);
+
+            const { data, error } = await this.supabaseClient
                 .from('invoices')
                 .upsert(invoiceData, { onConflict: 'id' });
 
-            if (error) throw error;
+            if (error) {
+                console.error('❌ Erreur Supabase:', error);
+                throw error;
+            }
+
+            console.log('✅ Facture sauvegardée avec succès dans Supabase:', invoiceData.id, data);
         } catch (error) {
-            console.error('Erreur lors de la sauvegarde de la facture:', error);
+            console.error('❌ Erreur lors de la sauvegarde de la facture dans Supabase:', error);
             throw error;
         }
     },
@@ -276,14 +332,21 @@ window.app = {
     },
 
     saveData: async function () {
-        if (this.useSupabase) {
+        if (this.useSupabase && this.supabaseClient) {
             try {
+                console.log(`💾 Synchronisation de ${this.data.invoices.length} facture(s) avec Supabase...`);
                 // Sauvegarder toutes les factures dans Supabase
                 for (const invoice of this.data.invoices) {
-                    await this.saveInvoiceToSupabase(invoice);
+                    try {
+                        await this.saveInvoiceToSupabase(invoice);
+                    } catch (error) {
+                        console.error(`❌ Erreur pour la facture ${invoice.id}:`, error);
+                        // Continuer avec les autres factures même en cas d'erreur
+                    }
                 }
+                console.log('✅ Synchronisation Supabase terminée');
             } catch (error) {
-                console.error('Erreur lors de la sauvegarde dans Supabase:', error);
+                console.error('❌ Erreur lors de la sauvegarde dans Supabase:', error);
                 // Fallback sur localStorage en cas d'erreur
                 localStorage.setItem('akg85_invoices', JSON.stringify(this.data.invoices));
             }
@@ -657,13 +720,16 @@ window.app = {
             if (this.useSupabase) {
                 try {
                     await this.saveInvoiceToSupabase(invoiceData);
+                    console.log('✅ Facture sauvegardée dans Supabase:', invoiceData.id);
                 } catch (error) {
-                    console.error('Erreur Supabase:', error);
-                    // Continuer quand même, les données sont dans le tableau local
+                    console.error('❌ Erreur Supabase lors de la sauvegarde:', error);
+                    alert('Erreur lors de la sauvegarde dans Supabase: ' + (error.message || 'Erreur inconnue') + 
+                          '\n\nLa facture a été sauvegardée localement. Veuillez vérifier votre connexion.');
                 }
             }
 
-            this.saveData();
+            // Sauvegarder toutes les factures (pour synchronisation complète)
+            await this.saveData();
             this.currentInvoiceId = null;
             this.navigate('dashboard');
         } catch (err) {
@@ -863,143 +929,92 @@ window.app = {
     },
 
     printInvoice: function () {
-        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth <= 768;
-        
-        // Préparer l'impression
-        this.prepareForPrint();
-        
-        // Sur mobile, utiliser une approche différente
-        if (isMobile) {
-            // Sur mobile, on utilise les événements beforeprint/afterprint
-            // qui sont mieux supportés
-            const restorePrint = () => {
-                this.restoreAfterPrint();
-                window.removeEventListener('afterprint', restorePrint);
-            };
-            
-            window.addEventListener('afterprint', restorePrint);
-            
-            // Petit délai pour s'assurer que les styles sont appliqués
-            requestAnimationFrame(() => {
-                requestAnimationFrame(() => {
-                    window.print();
-                });
-            });
-        } else {
-            // Sur desktop, approche standard
-            setTimeout(() => {
-                window.print();
-                setTimeout(() => {
-                    this.restoreAfterPrint();
-                }, 500);
-            }, 100);
+        // Vérifier que la facture est bien affichée
+        const container = document.getElementById('invoice-preview-container');
+        if (!container || !container.innerHTML || container.innerHTML.trim() === '') {
+            alert('Aucune facture à imprimer. Veuillez d\'abord afficher une facture.');
+            return;
         }
-    },
-
-    prepareForPrint: function () {
-        // S'assurer que la vue détail est visible
+        
+        // Préparer rapidement l'impression
         const viewDetail = document.getElementById('view-detail');
+        const paper = document.getElementById('invoice-preview-container');
+        const scaleEl = document.getElementById('invoice-mobile-scale');
+        const scrollEl = document.getElementById('invoice-preview-scroll');
+        
+        // Sauvegarder l'état rapidement
+        this._printState = {
+            viewDetailHidden: viewDetail ? viewDetail.classList.contains('hidden') : false,
+            scaleElWidth: scaleEl ? scaleEl.style.width : '',
+            scaleElTransform: scaleEl ? scaleEl.style.transform : '',
+            paperTransform: paper ? paper.style.transform : ''
+        };
+        
+        // Forcer la visibilité rapidement
         if (viewDetail) {
             viewDetail.classList.remove('hidden');
             viewDetail.style.display = 'block';
-            viewDetail.style.visibility = 'visible';
         }
         
-        // Ajouter une classe pour forcer les styles d'impression
+        if (scaleEl) {
+            scaleEl.style.transform = 'none';
+            scaleEl.style.width = '100%';
+        }
+        
+        if (paper) {
+            paper.style.transform = 'none';
+            paper.style.width = '100%';
+        }
+        
         document.body.classList.add('printing');
         
-        // Désactiver temporairement le scale pour l'impression
-        const paper = document.getElementById('invoice-preview-container');
-        const scaleEl = document.getElementById('invoice-mobile-scale');
-        const scrollEl = document.getElementById('invoice-preview-scroll');
-        
-        // Sauvegarder l'état actuel dans l'objet app pour pouvoir le restaurer
-        if (paper && scaleEl) {
-            this._printState = {
-                viewDetailHidden: viewDetail ? viewDetail.classList.contains('hidden') : false,
-                viewDetailDisplay: viewDetail ? viewDetail.style.display : '',
-                viewDetailVisibility: viewDetail ? viewDetail.style.visibility : '',
-                paperTransform: paper.style.transform,
-                paperTransformOrigin: paper.style.transformOrigin,
-                paperWidth: paper.style.width,
-                paperMaxWidth: paper.style.maxWidth,
-                scaleElWidth: scaleEl.style.width,
-                scaleElHeight: scaleEl.style.height,
-                scaleElOverflow: scaleEl.style.overflow,
-                scaleElTransform: scaleEl.style.transform,
-                scrollElOverflow: scrollEl ? scrollEl.style.overflow : '',
-                scrollElMaxHeight: scrollEl ? scrollEl.style.maxHeight : '',
-                scrollElDisplay: scrollEl ? scrollEl.style.display : ''
-            };
-            
-            // Forcer la désactivation du scale pour l'impression
-            if (scrollEl) {
-                scrollEl.style.setProperty('overflow', 'visible', 'important');
-                scrollEl.style.setProperty('max-height', 'none', 'important');
-                scrollEl.style.setProperty('display', 'block', 'important');
+        // Utiliser l'événement beforeprint pour forcer l'affichage au dernier moment
+        const handleBeforePrint = () => {
+            if (viewDetail) {
+                viewDetail.style.display = 'block';
+                viewDetail.style.visibility = 'visible';
             }
-            
-            scaleEl.style.setProperty('width', 'auto', 'important');
-            scaleEl.style.setProperty('height', 'auto', 'important');
-            scaleEl.style.setProperty('overflow', 'visible', 'important');
-            scaleEl.style.setProperty('transform', 'none', 'important');
-            scaleEl.style.setProperty('position', 'static', 'important');
-            
-            paper.style.setProperty('transform', 'none', 'important');
-            paper.style.setProperty('transform-origin', 'top left', 'important');
-            paper.style.setProperty('width', '100%', 'important');
-            paper.style.setProperty('max-width', '100%', 'important');
-            paper.style.setProperty('margin', '0', 'important');
-            paper.style.setProperty('display', 'block', 'important');
-            paper.style.setProperty('visibility', 'visible', 'important');
-            
-            // Forcer un reflow pour appliquer les changements
-            void paper.offsetHeight;
-            void scaleEl.offsetHeight;
-            if (scrollEl) void scrollEl.offsetHeight;
-            if (viewDetail) void viewDetail.offsetHeight;
-        }
+            if (paper) {
+                paper.style.display = 'block';
+                paper.style.visibility = 'visible';
+            }
+        };
+        
+        const handleAfterPrint = () => {
+            this.restoreAfterPrint();
+            window.removeEventListener('beforeprint', handleBeforePrint);
+            window.removeEventListener('afterprint', handleAfterPrint);
+        };
+        
+        // Ajouter les listeners
+        window.addEventListener('beforeprint', handleBeforePrint);
+        window.addEventListener('afterprint', handleAfterPrint);
+        
+        // Déclencher l'impression IMMÉDIATEMENT sans délai
+        window.print();
     },
 
+
     restoreAfterPrint: function () {
-        const paper = document.getElementById('invoice-preview-container');
-        const scaleEl = document.getElementById('invoice-mobile-scale');
-        const scrollEl = document.getElementById('invoice-preview-scroll');
         const viewDetail = document.getElementById('view-detail');
+        const scaleEl = document.getElementById('invoice-mobile-scale');
+        const paper = document.getElementById('invoice-preview-container');
         
         // Restaurer l'état sauvegardé
-        if (paper && scaleEl && this._printState) {
-            if (viewDetail) {
-                if (this._printState.viewDetailHidden) {
-                    viewDetail.classList.add('hidden');
-                } else {
-                    viewDetail.classList.remove('hidden');
-                }
-                viewDetail.style.display = this._printState.viewDetailDisplay;
-                viewDetail.style.visibility = this._printState.viewDetailVisibility;
+        if (this._printState) {
+            if (viewDetail && this._printState.viewDetailHidden) {
+                viewDetail.classList.add('hidden');
             }
             
-            if (scrollEl) {
-                scrollEl.style.overflow = this._printState.scrollElOverflow;
-                scrollEl.style.maxHeight = this._printState.scrollElMaxHeight;
-                scrollEl.style.display = this._printState.scrollElDisplay;
+            if (scaleEl) {
+                scaleEl.style.width = this._printState.scaleElWidth;
+                scaleEl.style.transform = this._printState.scaleElTransform;
             }
             
-            paper.style.transform = this._printState.paperTransform;
-            paper.style.transformOrigin = this._printState.paperTransformOrigin;
-            paper.style.width = this._printState.paperWidth;
-            paper.style.maxWidth = this._printState.paperMaxWidth;
-            paper.style.margin = '';
-            paper.style.display = '';
-            paper.style.visibility = '';
+            if (paper) {
+                paper.style.transform = this._printState.paperTransform;
+            }
             
-            scaleEl.style.width = this._printState.scaleElWidth;
-            scaleEl.style.height = this._printState.scaleElHeight;
-            scaleEl.style.overflow = this._printState.scaleElOverflow;
-            scaleEl.style.transform = this._printState.scaleElTransform;
-            scaleEl.style.position = '';
-            
-            // Nettoyer l'état sauvegardé
             this._printState = null;
         }
         

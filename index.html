@@ -22,6 +22,15 @@
     <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
     <!-- Supabase SDK -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- Configuration Supabase injectée au build (sera remplacée par le script de build) -->
+    <!-- Supabase Config Inline -->
+    <script>
+        // Cette section sera remplacée par le script de build avec les vraies valeurs
+        // Si vous voyez ce message, le script de build ne s'est pas exécuté
+        if (!window.supabaseConfig) {
+            window.supabaseConfig = {};
+        }
+    </script>
     <!-- Configuration locale (si elle existe, elle override la config par défaut) -->
     <script src="supabase-config.local.js" onerror="console.log('Fichier de config local non trouvé, utilisation de la config par défaut')"></script>
     <!-- Configuration par défaut -->

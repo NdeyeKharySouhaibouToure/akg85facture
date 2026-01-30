@@ -1202,22 +1202,24 @@ h4 {
     .header,
     .fab,
     .container-nav,
-    .view-section:not(#view-detail) {
+    .view-section:not(#view-detail):not(#print-container-temp) {
         display: none !important;
         visibility: hidden !important;
     }
     
-    /* Forcer l'affichage de la vue détail même si elle a la classe hidden */
-    .hidden {
+    /* IMPORTANT: Forcer l'affichage de #view-detail et du conteneur d'impression */
+    #view-detail,
+    #view-detail.hidden,
+    #print-container-temp,
+    body.printing #view-detail,
+    body.printing #view-detail.hidden {
         display: block !important;
         visibility: visible !important;
         opacity: 1 !important;
     }
     
-    /* Sauf pour les éléments qu'on veut vraiment masquer */
-    .hidden.no-print,
-    .hidden.header,
-    .hidden.fab {
+    /* Masquer les autres éléments avec hidden */
+    .hidden:not(#view-detail):not(#print-container-temp) {
         display: none !important;
     }
 
@@ -1229,18 +1231,37 @@ h4 {
         width: 100% !important;
     }
 
-    /* Afficher uniquement la vue détail */
-    #view-detail {
+    /* Afficher uniquement la vue détail - FORCER même avec hidden */
+    #view-detail,
+    #view-detail.hidden,
+    #print-container-temp {
         display: block !important;
         visibility: visible !important;
         opacity: 1 !important;
+        position: relative !important;
+        height: auto !important;
+        min-height: auto !important;
     }
     
-    /* Forcer l'affichage même si la classe hidden est présente */
-    #view-detail.hidden {
+    /* Conteneur d'impression temporaire */
+    #print-container-temp {
+        position: absolute !important;
+        left: 0 !important;
+        top: 0 !important;
+        width: 100% !important;
+        background: white !important;
+        z-index: 99999 !important;
+    }
+    
+    #invoice-preview-container-print {
+        width: 100% !important;
+        max-width: 100% !important;
+        transform: none !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        background: white !important;
         display: block !important;
         visibility: visible !important;
-        opacity: 1 !important;
     }
 
     /* Wrapper scroll - complètement désactivé */
@@ -1269,18 +1290,17 @@ h4 {
         padding: 0 !important;
     }
 
-    /* Conteneur de la facture */
+    /* Conteneur de la facture - FORCER l'affichage */
     #invoice-preview-container,
     .paper-invoice {
         box-shadow: none !important;
-        margin: 0 auto !important;
+        margin: 0 !important;
         padding: 0 !important;
         width: 100% !important;
         min-width: 100% !important;
         max-width: 100% !important;
         transform: none !important;
         transform-origin: top left !important;
-        page-break-inside: avoid;
         position: relative !important;
         background: white !important;
         display: block !important;

@@ -4,7 +4,8 @@
   "description": "Application de facturation AKG 85",
   "scripts": {
     "setup": "node scripts/setup-config.js",
-    "dev": "node scripts/setup-config.js && npx http-server -p 8080 -o"
+    "dev": "node scripts/setup-config.js && npx http-server -p 8080 -o",
+    "build": "node scripts/build-vercel.js"
   },
   "devDependencies": {
     "dotenv": "^16.3.1"
