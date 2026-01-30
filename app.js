@@ -85,8 +85,20 @@ window.app = {
     init: async function () {
         if (typeof lucide !== 'undefined') lucide.createIcons();
         
-        // Initialiser Supabase
+        // Attendre un peu pour s'assurer que tous les scripts sont chargés
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        // Initialiser Supabase (réessayer si nécessaire)
         this.getSupabaseClient();
+        
+        // Si Supabase n'est pas encore initialisé, réessayer une fois
+        if (!this.useSupabase && window.supabaseConfig && 
+            window.supabaseConfig.url !== 'YOUR_SUPABASE_URL' &&
+            window.supabaseConfig.anonKey !== 'YOUR_SUPABASE_ANON_KEY') {
+            console.log('[App] Réessai d\'initialisation Supabase...');
+            this.supabaseClient = null; // Réinitialiser pour forcer la création
+            this.getSupabaseClient();
+        }
         
         // Charger les paramètres
         await this.loadSettings();
@@ -268,8 +280,14 @@ window.app = {
 
     // Sauvegarder une facture dans Supabase
     saveInvoiceToSupabase: async function(invoice) {
+        console.log('[Supabase Save] Début de la sauvegarde de la facture:', invoice.id);
+        console.log('[Supabase Save] useSupabase:', this.useSupabase);
+        console.log('[Supabase Save] supabaseClient:', this.supabaseClient ? '✓ Disponible' : '✗ Non disponible');
+        
         if (!this.useSupabase || !this.supabaseClient) {
-            console.warn('Supabase non configuré ou client non disponible');
+            console.warn('[Supabase Save] ✗ Supabase non configuré ou client non disponible');
+            console.warn('[Supabase Save] useSupabase:', this.useSupabase);
+            console.warn('[Supabase Save] supabaseClient:', this.supabaseClient);
             return;
         }
 
@@ -296,20 +314,34 @@ window.app = {
                 paid_amount: parseFloat(invoice.paidAmount) || 0
             };
 
-            console.log('💾 Tentative de sauvegarde dans Supabase:', invoiceData.id);
+            console.log('[Supabase Save] 💾 Données à sauvegarder:', {
+                id: invoiceData.id,
+                number: invoiceData.number,
+                client_name: invoiceData.client_name,
+                total: invoiceData.total,
+                status: invoiceData.status
+            });
 
+            console.log('[Supabase Save] Exécution de upsert...');
             const { data, error } = await this.supabaseClient
                 .from('invoices')
                 .upsert(invoiceData, { onConflict: 'id' });
 
             if (error) {
-                console.error('❌ Erreur Supabase:', error);
+                console.error('[Supabase Save] ❌ Erreur Supabase:', error);
+                console.error('[Supabase Save] Code d\'erreur:', error.code);
+                console.error('[Supabase Save] Message:', error.message);
+                console.error('[Supabase Save] Détails:', error.details);
+                console.error('[Supabase Save] Hint:', error.hint);
                 throw error;
             }
 
-            console.log('✅ Facture sauvegardée avec succès dans Supabase:', invoiceData.id, data);
+            console.log('[Supabase Save] ✅ Facture sauvegardée avec succès dans Supabase:', invoiceData.id);
+            console.log('[Supabase Save] Réponse Supabase:', data);
+            return data;
         } catch (error) {
-            console.error('❌ Erreur lors de la sauvegarde de la facture dans Supabase:', error);
+            console.error('[Supabase Save] ❌ Erreur lors de la sauvegarde de la facture dans Supabase:', error);
+            console.error('[Supabase Save] Stack:', error.stack);
             throw error;
         }
     },
@@ -718,14 +750,26 @@ window.app = {
 
             // Sauvegarder dans Supabase si configuré
             if (this.useSupabase) {
+                console.log('[Save Invoice] Tentative de sauvegarde dans Supabase pour:', invoiceData.id);
                 try {
                     await this.saveInvoiceToSupabase(invoiceData);
-                    console.log('✅ Facture sauvegardée dans Supabase:', invoiceData.id);
+                    console.log('[Save Invoice] ✅ Facture sauvegardée dans Supabase:', invoiceData.id);
                 } catch (error) {
-                    console.error('❌ Erreur Supabase lors de la sauvegarde:', error);
-                    alert('Erreur lors de la sauvegarde dans Supabase: ' + (error.message || 'Erreur inconnue') + 
-                          '\n\nLa facture a été sauvegardée localement. Veuillez vérifier votre connexion.');
+                    console.error('[Save Invoice] ❌ Erreur Supabase lors de la sauvegarde:', error);
+                    const errorMsg = error.message || error.details || 'Erreur inconnue';
+                    const errorCode = error.code || 'NO_CODE';
+                    console.error('[Save Invoice] Code d\'erreur:', errorCode);
+                    console.error('[Save Invoice] Détails complets:', error);
+                    
+                    // Afficher une alerte avec plus de détails pour le débogage
+                    alert('⚠️ Erreur lors de la sauvegarde dans Supabase:\n\n' + 
+                          'Code: ' + errorCode + '\n' +
+                          'Message: ' + errorMsg + '\n\n' +
+                          'La facture a été sauvegardée localement.\n' +
+                          'Vérifiez la console pour plus de détails.');
                 }
+            } else {
+                console.log('[Save Invoice] Supabase non configuré, sauvegarde locale uniquement');
             }
 
             // Sauvegarder toutes les factures (pour synchronisation complète)
