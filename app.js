@@ -18,6 +18,10 @@ window.app = {
     statusFilter: 'all',
     supabaseClient: null,
     useSupabase: false, // Flag pour savoir si Supabase est configuré
+    saveQueue: [], // Queue pour les factures à sauvegarder en cas d'échec
+    saveQueueInterval: null, // Interval pour retry automatique
+    saveQueue: [], // Queue pour les factures à sauvegarder en cas d'échec
+    saveQueueInterval: null, // Interval pour retry automatique
 
     // Obtenir le client Supabase
     getSupabaseClient: function() {
@@ -142,12 +146,120 @@ window.app = {
 
         this.applyFilters();
         this.updateStats();
+        
+        // Charger la queue de sauvegarde depuis localStorage
+        this.loadSaveQueue();
+        
+        // Démarrer le processus de retry automatique
+        this.startSaveQueueRetry();
 
         window.addEventListener('resize', function () {
             if (app.currentInvoiceId) app.applyMobileInvoiceScale();
         });
 
         this.hideSplash();
+    },
+    
+    // Gestion de la queue de sauvegarde
+    addToSaveQueue: function(invoice) {
+        // Retirer l'ancienne entrée si elle existe
+        this.saveQueue = this.saveQueue.filter(i => i.id !== invoice.id);
+        // Ajouter la nouvelle
+        this.saveQueue.push({
+            ...invoice,
+            retryCount: 0,
+            lastRetry: Date.now()
+        });
+        this.saveSaveQueue();
+        console.log('[Save Queue] Facture ajoutée à la queue:', invoice.id, 'Total en queue:', this.saveQueue.length);
+    },
+    
+    removeFromSaveQueue: function(invoiceId) {
+        const before = this.saveQueue.length;
+        this.saveQueue = this.saveQueue.filter(i => i.id !== invoiceId);
+        if (this.saveQueue.length < before) {
+            this.saveSaveQueue();
+            console.log('[Save Queue] Facture retirée de la queue:', invoiceId);
+        }
+    },
+    
+    loadSaveQueue: function() {
+        try {
+            const stored = localStorage.getItem('akg85_save_queue');
+            if (stored) {
+                this.saveQueue = JSON.parse(stored);
+                console.log('[Save Queue] Queue chargée:', this.saveQueue.length, 'facture(s) en attente');
+            }
+        } catch (e) {
+            console.error('[Save Queue] Erreur lors du chargement:', e);
+            this.saveQueue = [];
+        }
+    },
+    
+    saveSaveQueue: function() {
+        try {
+            localStorage.setItem('akg85_save_queue', JSON.stringify(this.saveQueue));
+        } catch (e) {
+            console.error('[Save Queue] Erreur lors de la sauvegarde:', e);
+        }
+    },
+    
+    startSaveQueueRetry: function() {
+        // Arrêter l'intervalle existant si présent
+        if (this.saveQueueInterval) {
+            clearInterval(this.saveQueueInterval);
+        }
+        
+        // Retry toutes les 30 secondes
+        this.saveQueueInterval = setInterval(() => {
+            this.processSaveQueue();
+        }, 30000);
+        
+        // Traiter immédiatement au démarrage
+        setTimeout(() => this.processSaveQueue(), 5000);
+    },
+    
+    processSaveQueue: async function() {
+        if (this.saveQueue.length === 0 || !this.useSupabase || !this.supabaseClient) {
+            return;
+        }
+        
+        console.log('[Save Queue] Traitement de la queue:', this.saveQueue.length, 'facture(s)');
+        
+        const now = Date.now();
+        const minRetryDelay = 10000; // 10 secondes entre les retries
+        
+        for (let i = this.saveQueue.length - 1; i >= 0; i--) {
+            const queuedInvoice = this.saveQueue[i];
+            
+            // Vérifier si on peut retry (au moins 10 secondes depuis le dernier essai)
+            if (now - queuedInvoice.lastRetry < minRetryDelay) {
+                continue;
+            }
+            
+            // Limiter à 5 tentatives
+            if (queuedInvoice.retryCount >= 5) {
+                console.warn('[Save Queue] Trop de tentatives pour:', queuedInvoice.id, '- retiré de la queue');
+                this.removeFromSaveQueue(queuedInvoice.id);
+                continue;
+            }
+            
+            try {
+                console.log('[Save Queue] Retry pour:', queuedInvoice.id, 'Tentative:', queuedInvoice.retryCount + 1);
+                queuedInvoice.lastRetry = now;
+                queuedInvoice.retryCount++;
+                
+                await this.saveInvoiceToSupabase(queuedInvoice, queuedInvoice.retryCount - 1);
+                
+                // Succès - retirer de la queue
+                console.log('[Save Queue] ✅ Succès pour:', queuedInvoice.id);
+                this.removeFromSaveQueue(queuedInvoice.id);
+            } catch (error) {
+                console.error('[Save Queue] ❌ Échec pour:', queuedInvoice.id, error.message);
+                // Mettre à jour la queue
+                this.saveSaveQueue();
+            }
+        }
     },
 
     hideSplash: function () {
@@ -278,29 +390,52 @@ window.app = {
         }
     },
 
-    // Sauvegarder une facture dans Supabase
-    saveInvoiceToSupabase: async function(invoice) {
+    // Sauvegarder une facture dans Supabase avec retry
+    saveInvoiceToSupabase: async function(invoice, retryCount = 0) {
+        const maxRetries = 3;
+        const retryDelay = 1000; // 1 seconde
+        
         console.log('[Supabase Save] Début de la sauvegarde de la facture:', invoice.id);
         console.log('[Supabase Save] useSupabase:', this.useSupabase);
         console.log('[Supabase Save] supabaseClient:', this.supabaseClient ? '✓ Disponible' : '✗ Non disponible');
+        console.log('[Supabase Save] Tentative:', retryCount + 1, '/', maxRetries);
         
         if (!this.useSupabase || !this.supabaseClient) {
             console.warn('[Supabase Save] ✗ Supabase non configuré ou client non disponible');
             console.warn('[Supabase Save] useSupabase:', this.useSupabase);
             console.warn('[Supabase Save] supabaseClient:', this.supabaseClient);
+            
+            // Réessayer d'initialiser le client
+            if (!this.supabaseClient && typeof supabase !== 'undefined' && window.supabaseConfig) {
+                console.log('[Supabase Save] Tentative de réinitialisation du client...');
+                this.supabaseClient = null;
+                this.getSupabaseClient();
+                
+                if (this.supabaseClient && retryCount === 0) {
+                    console.log('[Supabase Save] Client réinitialisé, nouvelle tentative...');
+                    return this.saveInvoiceToSupabase(invoice, 0);
+                }
+            }
             return;
         }
+
+        // Helper pour convertir les chaînes vides en null
+        const emptyToNull = (value) => {
+            if (value === null || value === undefined) return null;
+            if (typeof value === 'string' && value.trim() === '') return null;
+            return value;
+        };
 
         try {
             const invoiceData = {
                 id: invoice.id,
                 number: invoice.number,
                 client_name: invoice.clientName,
-                client_phone: invoice.clientPhone || null,
-                client_email: invoice.clientEmail || null,
-                client_address: invoice.clientAddress || null,
+                client_phone: emptyToNull(invoice.clientPhone),
+                client_email: emptyToNull(invoice.clientEmail),
+                client_address: emptyToNull(invoice.clientAddress),
                 date: invoice.date,
-                due_date: invoice.dueDate || null,
+                due_date: emptyToNull(invoice.dueDate),
                 items: invoice.items,
                 subtotal: parseFloat(invoice.subtotal) || 0,
                 discount_type: invoice.discountType || 'FIXED',
@@ -309,7 +444,7 @@ window.app = {
                 tax_rate: parseFloat(invoice.taxRate) || 0,
                 tax_amount: parseFloat(invoice.taxAmount) || 0,
                 total: parseFloat(invoice.total) || 0,
-                notes: invoice.notes || null,
+                notes: emptyToNull(invoice.notes),
                 status: invoice.status || 'PENDING',
                 paid_amount: parseFloat(invoice.paidAmount) || 0
             };
@@ -318,6 +453,9 @@ window.app = {
                 id: invoiceData.id,
                 number: invoiceData.number,
                 client_name: invoiceData.client_name,
+                client_phone: invoiceData.client_phone,
+                client_email: invoiceData.client_email,
+                client_address: invoiceData.client_address,
                 total: invoiceData.total,
                 status: invoiceData.status
             });
@@ -333,6 +471,19 @@ window.app = {
                 console.error('[Supabase Save] Message:', error.message);
                 console.error('[Supabase Save] Détails:', error.details);
                 console.error('[Supabase Save] Hint:', error.hint);
+                
+                // Retry pour les erreurs réseau ou temporaires
+                if (retryCount < maxRetries && (
+                    error.code === 'PGRST301' || // Network error
+                    error.message?.includes('fetch') ||
+                    error.message?.includes('network') ||
+                    error.message?.includes('timeout')
+                )) {
+                    console.log(`[Supabase Save] ⏳ Retry dans ${retryDelay}ms...`);
+                    await new Promise(resolve => setTimeout(resolve, retryDelay * (retryCount + 1)));
+                    return this.saveInvoiceToSupabase(invoice, retryCount + 1);
+                }
+                
                 throw error;
             }
 
@@ -342,6 +493,14 @@ window.app = {
         } catch (error) {
             console.error('[Supabase Save] ❌ Erreur lors de la sauvegarde de la facture dans Supabase:', error);
             console.error('[Supabase Save] Stack:', error.stack);
+            
+            // Dernier retry si ce n'est pas une erreur de validation
+            if (retryCount < maxRetries && !error.message?.includes('violates') && !error.message?.includes('permission')) {
+                console.log(`[Supabase Save] ⏳ Dernier retry dans ${retryDelay * 2}ms...`);
+                await new Promise(resolve => setTimeout(resolve, retryDelay * 2 * (retryCount + 1)));
+                return this.saveInvoiceToSupabase(invoice, retryCount + 1);
+            }
+            
             throw error;
         }
     },
@@ -555,10 +714,56 @@ window.app = {
         return { subtotal, discountAmount, taxAmount, total };
     },
 
-    generateId: function () {
+    generateId: async function () {
         const prefix = "FAC";
-        const num = this.data.invoices.length + 101;
-        return `${prefix}-${num}`;
+        
+        // Récupérer tous les IDs existants (local + Supabase si disponible)
+        const existingIds = new Set();
+        
+        // Ajouter les IDs locaux
+        this.data.invoices.forEach(inv => {
+            if (inv.id) existingIds.add(inv.id);
+        });
+        
+        // Si Supabase est disponible, récupérer aussi les IDs depuis Supabase
+        if (this.useSupabase && this.supabaseClient) {
+            try {
+                const { data, error } = await this.supabaseClient
+                    .from('invoices')
+                    .select('id');
+                
+                if (!error && data) {
+                    data.forEach(inv => {
+                        if (inv.id) existingIds.add(inv.id);
+                    });
+                }
+            } catch (error) {
+                console.warn('[GenerateId] Erreur lors de la récupération des IDs depuis Supabase:', error);
+                // Continuer avec les IDs locaux seulement
+            }
+        }
+        
+        // Trouver le prochain numéro disponible
+        let num = 1;
+        let newId;
+        
+        do {
+            // Format avec padding à 3 chiffres (FAC-001, FAC-002, etc.)
+            const paddedNum = String(num).padStart(3, '0');
+            newId = `${prefix}-${paddedNum}`;
+            num++;
+            
+            // Limite de sécurité pour éviter une boucle infinie
+            if (num > 9999) {
+                // Si on dépasse 9999, utiliser un timestamp pour garantir l'unicité
+                const timestamp = Date.now().toString().slice(-6);
+                newId = `${prefix}-${timestamp}`;
+                break;
+            }
+        } while (existingIds.has(newId));
+        
+        console.log('[GenerateId] Nouvel ID généré:', newId, '(IDs existants:', existingIds.size, ')');
+        return newId;
     },
 
     formatMoney: function (amount) {
@@ -713,17 +918,20 @@ window.app = {
 
             const totals = this.calculateTotal();
             const existingId = document.getElementById('invoice-id').value; // Get from hidden input correctly
-            const id = existingId || this.generateId();
+            const id = existingId || await this.generateId();
 
+            // Helper pour convertir les chaînes vides en null
+            const emptyToNull = (value) => (value && value.trim() !== '') ? value.trim() : null;
+            
             const invoiceData = {
                 id: id,
                 number: id,
-                clientName: form.clientName.value,
-                clientPhone: form.clientPhone.value,
-                clientEmail: form.clientEmail.value,
-                clientAddress: form.clientAddress.value,
+                clientName: form.clientName.value.trim(),
+                clientPhone: emptyToNull(form.clientPhone.value),
+                clientEmail: emptyToNull(form.clientEmail.value),
+                clientAddress: emptyToNull(form.clientAddress.value),
                 date: form.date.value,
-                dueDate: form.dueDate.value,
+                dueDate: emptyToNull(form.dueDate.value),
                 items: items,
                 subtotal: totals.subtotal,
                 discountType: form.discountType.value,
@@ -732,7 +940,7 @@ window.app = {
                 taxRate: document.getElementById('tax-toggle').checked ? this.data.settings.taxRate : 0,
                 taxAmount: totals.taxAmount,
                 total: totals.total,
-                notes: form.notes.value,
+                notes: emptyToNull(form.notes.value),
                 status: existingId ? this.data.invoices.find(i => i.id === existingId).status : 'PENDING',
                 paidAmount: existingId ? this.data.invoices.find(i => i.id === existingId).paidAmount : 0,
                 updatedAt: new Date().toISOString()
@@ -754,6 +962,9 @@ window.app = {
                 try {
                     await this.saveInvoiceToSupabase(invoiceData);
                     console.log('[Save Invoice] ✅ Facture sauvegardée dans Supabase:', invoiceData.id);
+                    
+                    // Retirer de la queue de sauvegarde si elle y était
+                    this.removeFromSaveQueue(invoiceData.id);
                 } catch (error) {
                     console.error('[Save Invoice] ❌ Erreur Supabase lors de la sauvegarde:', error);
                     const errorMsg = error.message || error.details || 'Erreur inconnue';
@@ -761,12 +972,25 @@ window.app = {
                     console.error('[Save Invoice] Code d\'erreur:', errorCode);
                     console.error('[Save Invoice] Détails complets:', error);
                     
+                    // Ajouter à la queue de sauvegarde pour retry plus tard
+                    this.addToSaveQueue(invoiceData);
+                    
                     // Afficher une alerte avec plus de détails pour le débogage
-                    alert('⚠️ Erreur lors de la sauvegarde dans Supabase:\n\n' + 
-                          'Code: ' + errorCode + '\n' +
-                          'Message: ' + errorMsg + '\n\n' +
-                          'La facture a été sauvegardée localement.\n' +
-                          'Vérifiez la console pour plus de détails.');
+                    const isNetworkError = errorCode === 'PGRST301' || 
+                                         errorMsg.includes('fetch') || 
+                                         errorMsg.includes('network') ||
+                                         errorMsg.includes('timeout');
+                    
+                    if (isNetworkError) {
+                        alert('⚠️ Problème de connexion lors de la sauvegarde dans Supabase.\n\n' +
+                              'La facture a été sauvegardée localement et sera synchronisée automatiquement dès que la connexion sera rétablie.');
+                    } else {
+                        alert('⚠️ Erreur lors de la sauvegarde dans Supabase:\n\n' + 
+                              'Code: ' + errorCode + '\n' +
+                              'Message: ' + errorMsg + '\n\n' +
+                              'La facture a été sauvegardée localement.\n' +
+                              'Vérifiez la console pour plus de détails.');
+                    }
                 }
             } else {
                 console.log('[Save Invoice] Supabase non configuré, sauvegarde locale uniquement');
