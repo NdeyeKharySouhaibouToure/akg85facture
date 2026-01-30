@@ -32,10 +32,38 @@
 
     <!-- Écran d'ouverture AKG 85 (splash) - application à part -->
     <div id="splash" class="splash" aria-hidden="false">
+        <!-- Background animé avec particules -->
+        <div class="splash-background">
+            <div class="splash-gradient"></div>
+            <div class="splash-particles">
+                <div class="particle"></div>
+                <div class="particle"></div>
+                <div class="particle"></div>
+                <div class="particle"></div>
+                <div class="particle"></div>
+                <div class="particle"></div>
+                <div class="particle"></div>
+                <div class="particle"></div>
+            </div>
+        </div>
+        
+        <!-- Contenu principal -->
         <div class="splash-inner">
-            <img src="logo_akg.png" alt="AKG 85" class="splash-logo">
-            <p class="splash-title">AKG 85</p>
-            <p class="splash-subtitle">Facturation</p>
+            <div class="splash-logo-container">
+                <div class="splash-logo-glow"></div>
+                <img src="logo_akg.png" alt="AKG 85" class="splash-logo">
+            </div>
+            <div class="splash-text-container">
+                <h1 class="splash-title">
+                    <span class="splash-title-line">AKG 85</span>
+                </h1>
+                <p class="splash-subtitle">
+                    <span class="splash-subtitle-text">Facturation</span>
+                </p>
+            </div>
+            <div class="splash-loader">
+                <div class="splash-loader-bar"></div>
+            </div>
         </div>
     </div>
 
