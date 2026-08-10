@@ -1071,9 +1071,9 @@ window.app = {
                  <div class="invoice-to-from-right" style="flex: 1; text-align: right; min-width: 0;">
                      <div style="font-weight: 600; font-size: 16px; margin-bottom: 8px; color: #000000;">FACTURE DE:</div>
                      <div style="font-size: 17px; font-weight: 700; color: #000000;">${settings.name}</div>
-                     ${settings.phone ? `<div style="font-size: 14px; color: #374151; margin-top: 4px;">${settings.phone}</div>` : ''}
                      ${settings.email ? `<div style="font-size: 14px; color: #374151; margin-top: 4px;">${settings.email}</div>` : ''}
                      ${Array.isArray(settings.address) ? settings.address.map(l => `<div style="font-size: 14px; color: #374151; margin-top: 4px;">${l}</div>`).join('') : (settings.address ? `<div style="font-size: 14px; color: #374151; margin-top: 4px;">${settings.address}</div>` : '')}
+                     ${settings.phone ? `<div style="font-size: 14px; color: #000000; font-weight: 700; margin-top: 4px;">${settings.phone}</div>` : ''}
                  </div>
              </div>
 
@@ -1364,9 +1364,9 @@ window.app = {
                     <div class="invoice-to-from-right" style="flex: 1; text-align: right; min-width: 0;">
                         <div style="font-weight: 600; font-size: 16px; margin-bottom: 8px; color: #000000;">FACTURE DE:</div>
                         <div style="font-size: 17px; font-weight: 700; color: #000000;">${settings.name}</div>
-                        ${settings.phone ? `<div style="font-size: 14px; color: #374151; margin-top: 4px;">${settings.phone}</div>` : ''}
                         ${settings.email ? `<div style="font-size: 14px; color: #374151; margin-top: 4px;">${settings.email}</div>` : ''}
                         ${Array.isArray(settings.address) ? settings.address.map(l => `<div style="font-size: 14px; color: #374151; margin-top: 4px;">${l}</div>`).join('') : (settings.address ? `<div style="font-size: 14px; color: #374151; margin-top: 4px;">${settings.address}</div>` : '')}
+                        ${settings.phone ? `<div style="font-size: 14px; color: #000000; font-weight: 700; margin-top: 4px;">${settings.phone}</div>` : ''}
                     </div>
                 </div>
                 <div class="invoice-items-wrap" style="padding: 24px; overflow-x: auto; font-family: Arial, Helvetica, sans-serif;">
