@@ -586,23 +586,32 @@ h4 {
     text-transform: uppercase;
 }
 
-/* Transitions entre vues – entrée douce */
+/* Transitions entre vues – entrée douce.
+   NB: on utilise une animation @keyframes (et non un transform permanent) pour
+   l'entrée, sinon le transform sur .view-section crée un bloc conteneur qui
+   "piège" le .fab en position: fixed et l'empêche de rester collé à l'écran. */
 .view-section {
     opacity: 0;
-    transform: translateY(6px);
-    transition: opacity 0.35s var(--ease-out), transform 0.35s var(--ease-out);
+    transition: opacity 0.35s var(--ease-out);
 }
 
 .view-section:not(.hidden) {
     opacity: 1;
-    transform: translateY(0);
+    animation: viewIn 0.35s var(--ease-out);
+}
+
+@keyframes viewIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
 }
 
 @media (prefers-reduced-motion: reduce) {
     .view-section {
         opacity: 1;
-        transform: none;
         transition: none;
+    }
+    .view-section:not(.hidden) {
+        animation: none;
     }
 }
 
@@ -616,7 +625,13 @@ h4 {
 
 @media (min-width: 768px) {
     .container {
-        max-width: 768px;
+        max-width: 960px;
+    }
+}
+
+@media (min-width: 1280px) {
+    .container {
+        max-width: 1200px;
     }
 }
 
