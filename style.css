@@ -669,6 +669,11 @@ h4 {
     .container {
         padding: 0.75rem;
     }
+
+    /* Bouton "Installer" en icône seule sur mobile pour gagner de la place */
+    #header-actions .install-label {
+        display: none;
+    }
 }
 
 /* Barre d'actions détail facture - mobile */

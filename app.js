@@ -1294,7 +1294,7 @@ window.app = {
         }
     },
 
-    downloadPDF: async function () {
+    downloadPDF: async function (mode) {
         const inv = this.data.invoices.find(i => i.id === this.currentInvoiceId);
         if (!inv) return;
 
@@ -1515,7 +1515,29 @@ window.app = {
 
             // Méthode de téléchargement optimisée pour mobile
             const fileName = `${inv.number || 'facture'}.pdf`;
-            
+
+            // Partage natif (Web Share API niveau 2 - fichiers) si demandé et supporté.
+            // Permet d'envoyer la facture directement via WhatsApp, e-mail, etc.
+            if (mode === 'share') {
+                const pdfBlobShare = pdf.output('blob');
+                const shareFile = new File([pdfBlobShare], fileName, { type: 'application/pdf' });
+                if (navigator.canShare && navigator.canShare({ files: [shareFile] })) {
+                    if (document.body.contains(loadingMsg)) document.body.removeChild(loadingMsg);
+                    try {
+                        await navigator.share({
+                            files: [shareFile],
+                            title: `Facture ${inv.number}`,
+                            text: `Facture ${inv.number} - ${inv.clientName}`,
+                        });
+                    } catch (shareErr) {
+                        // Annulation par l'utilisateur ou échec: on ne fait rien de plus.
+                    }
+                    return;
+                }
+                // Le partage de fichier n'est pas supporté par ce navigateur:
+                // on retombe sur le téléchargement classique ci-dessous.
+            }
+
             // Utiliser directement blob URL pour mobile (plus fiable)
             if (isMobile) {
                 // Sur mobile, utiliser blob URL directement

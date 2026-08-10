@@ -13,6 +13,7 @@
     <link rel="icon" type="image/png" href="logo_akg.png" sizes="32x32">
     <link rel="icon" type="image/png" href="logo_akg.png" sizes="192x192">
     <link rel="apple-touch-icon" href="logo_akg.png">
+    <link rel="manifest" href="manifest.json">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -89,7 +90,15 @@
                 <h1 class="header-title" id="page-title">Factures</h1>
             </div>
         </div>
-        <div id="header-actions">
+        <div id="header-actions" style="display: flex; align-items: center; gap: 0.4rem;">
+            <button id="share-btn" class="btn btn-ghost btn-icon-only" title="Partager l'application">
+                <i data-lucide="share-2"></i>
+            </button>
+            <button id="install-btn" class="btn btn-primary" title="Installer l'application"
+                style="display: inline-flex; align-items: center;">
+                <i data-lucide="download"></i>
+                <span class="install-label" style="margin-left: 0.4rem;">Installer</span>
+            </button>
             <button class="btn btn-ghost btn-icon-only" onclick="app.navigate('settings')" title="Paramètres">
                 <i data-lucide="settings"></i>
             </button>
@@ -357,6 +366,9 @@
                 <button class="btn btn-primary" onclick="app.downloadPDF()">
                     <i data-lucide="download" style="width: 1rem; margin-right: 0.5rem;"></i> PDF
                 </button>
+                <button class="btn btn-outline" onclick="app.downloadPDF('share')">
+                    <i data-lucide="share-2" style="width: 1rem; margin-right: 0.5rem;"></i> Partager
+                </button>
                 <button class="btn btn-outline" onclick="app.printInvoice()">
                     <i data-lucide="printer" style="width: 1rem; margin-right: 0.5rem;"></i> Imprimer
                 </button>
@@ -411,6 +423,93 @@
     </template>
 
     <script src="app.js"></script>
+
+    <!-- PWA: enregistrement du service worker (installation + hors-ligne) -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function () {
+                navigator.serviceWorker.register('sw.js').catch(function (err) {
+                    console.warn('[PWA] Service worker non enregistré:', err);
+                });
+            });
+        }
+    </script>
+
+    <!-- PWA: bouton "Installer" + partage de l'application -->
+    <script>
+        (function () {
+            var deferredPrompt = null;
+            var installBtn = document.getElementById('install-btn');
+            var shareBtn = document.getElementById('share-btn');
+
+            function isStandalone() {
+                return window.matchMedia('(display-mode: standalone)').matches
+                    || window.navigator.standalone === true;
+            }
+
+            // Déjà installée -> inutile d'afficher le bouton d'installation
+            if (installBtn && isStandalone()) {
+                installBtn.style.display = 'none';
+            }
+
+            // Chrome/Edge: capture l'événement pour déclencher l'invite native au clic
+            window.addEventListener('beforeinstallprompt', function (e) {
+                e.preventDefault();
+                deferredPrompt = e;
+                if (installBtn && !isStandalone()) installBtn.style.display = 'inline-flex';
+            });
+
+            window.addEventListener('appinstalled', function () {
+                deferredPrompt = null;
+                if (installBtn) installBtn.style.display = 'none';
+            });
+
+            if (installBtn) {
+                installBtn.addEventListener('click', async function () {
+                    if (deferredPrompt) {
+                        deferredPrompt.prompt();
+                        try { await deferredPrompt.userChoice; } catch (e) {}
+                        deferredPrompt = null;
+                        return;
+                    }
+                    // iOS Safari (pas d'invite native) ou autre navigateur -> instructions
+                    var ua = navigator.userAgent || '';
+                    if (/iphone|ipad|ipod/i.test(ua)) {
+                        alert("Pour installer l'application sur iPhone/iPad :\n\n"
+                            + "1. Appuyez sur le bouton Partager (carré avec une flèche) dans Safari\n"
+                            + "2. Choisissez « Sur l'écran d'accueil »\n"
+                            + "3. Appuyez sur « Ajouter »");
+                    } else {
+                        alert("Pour installer l'application :\n\n"
+                            + "Ouvrez le menu de votre navigateur (⋮), puis choisissez\n"
+                            + "« Installer l'application » ou « Ajouter à l'écran d'accueil ».");
+                    }
+                });
+            }
+
+            if (shareBtn) {
+                shareBtn.addEventListener('click', async function () {
+                    var shareData = {
+                        title: 'AKG 85 - Facturation',
+                        text: 'Application de facturation AKG 85 - GAYE & FRÈRE',
+                        url: window.location.href
+                    };
+                    try {
+                        if (navigator.share) {
+                            await navigator.share(shareData);
+                        } else if (navigator.clipboard && navigator.clipboard.writeText) {
+                            await navigator.clipboard.writeText(shareData.url);
+                            alert('Lien de l\'application copié :\n' + shareData.url);
+                        } else {
+                            window.prompt('Copiez le lien de l\'application :', shareData.url);
+                        }
+                    } catch (e) {
+                        // Annulation par l'utilisateur: rien à faire
+                    }
+                });
+            }
+        })();
+    </script>
 </body>
 
 </html>
