@@ -669,8 +669,11 @@ h4 {
     .container {
         padding: 0.75rem;
     }
+}
 
-    /* Bouton "Installer" en icône seule sur mobile pour gagner de la place */
+/* Le libellé "Installer" reste visible sur mobile (bouton explicite);
+   on ne le réduit à l'icône que sur les très petits écrans (<360px). */
+@media (max-width: 359px) {
     #header-actions .install-label {
         display: none;
     }
